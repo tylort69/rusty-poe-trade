@@ -1,0 +1,13 @@
+[package]
+name = "rpt-data"
+description = "Embedded Path of Exile game data (items, stats, client strings)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+fancy-regex.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
