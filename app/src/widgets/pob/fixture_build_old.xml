@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathOfBuilding>
+	<Build level="80" targetVersion="3_0" bandit="Alira" className="Marauder" ascendClassName="None" mainSocketGroup="1" viewMode="TREE">
+		<PlayerStat stat="Life" value="3100"/>
+		<PlayerStat stat="TotalDPS" value="45000.25"/>
+	</Build>
+	<Skills>
+		<Skill enabled="true" slot="Body Armour" mainActiveSkill="1">
+			<Gem level="18" skillId="Cleave" quality="10" enabled="true" nameSpec="Cleave"/>
+			<Gem level="18" skillId="SupportMeleePhysicalDamage" quality="0" enabled="true" nameSpec="Melee Physical Damage"/>
+		</Skill>
+		<Skill enabled="true">
+			<Gem level="10" gemId="Metadata/Items/Gems/SkillGemEnduringCry" quality="0" enabled="true"/>
+		</Skill>
+	</Skills>
+	<Tree activeSpec="1">
+		<Spec treeVersion="3_10" nodes="10,11" classId="1" ascendClassId="0"/>
+	</Tree>
+	<Notes></Notes>
+	<Items>
+		<Item id="1">Rarity: NORMAL
+Rusted Sword
+</Item>
+		<Slot name="Weapon 1" itemId="1"/>
+	</Items>
+	<Config>
+		<Input name="enemyLevel" number="70"/>
+	</Config>
+</PathOfBuilding>
