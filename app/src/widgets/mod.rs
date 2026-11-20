@@ -86,6 +86,7 @@ pub fn draw_widget(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime, wm_i
 
 /// Route a host event to widgets (upstream `MainProcess.onEvent` listeners).
 pub fn handle_event(w: &mut WCtx<'_>, rt: &mut Runtime, ev: &HostEvent) {
+    pob::on_item_text(&mut rt.pob, ev);
     match ev {
         HostEvent::WidgetAction { target } => {
             if let Some(id) = target.strip_prefix("stopwatch-start-stop:").and_then(|s| s.parse().ok()) {
