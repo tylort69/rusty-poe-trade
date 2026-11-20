@@ -17,6 +17,11 @@ rpt-trade.workspace = true
 regex.workspace = true
 rpt-platform.workspace = true
 rpt-stash.workspace = true
+# feature deps (shared; add new ones below this line)
+chrono.workspace = true
+base64 = "0.22"
+flate2 = "1"
+quick-xml = "0.38"
 raw-window-handle = "0.6"
 egui.workspace = true
 serde.workspace = true

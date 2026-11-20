@@ -14,6 +14,11 @@ pub mod price_check;
 pub mod settings;
 pub mod stash_search;
 pub mod timer;
+pub mod wealth;
+pub mod whispers;
+pub mod mapping;
+pub mod market;
+pub mod pob;
 
 use std::collections::HashMap;
 
@@ -46,6 +51,11 @@ pub struct Runtime {
     pub settings: settings::SettingsState,
     pub menu: menu::MenuState,
     pub image_strip: HashMap<u32, image_strip::ImageStripState>,
+    pub wealth: wealth::WealthState,
+    pub whispers: whispers::WhispersState,
+    pub mapping: mapping::MappingState,
+    pub market: market::MarketState,
+    pub pob: pob::PobState,
 }
 
 pub fn draw_widget(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime, wm_id: u32) {
@@ -65,6 +75,11 @@ pub fn draw_widget(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime, wm_i
         "item-check" => item_check::show(ctx, w, &mut rt.item_check, wm_id),
         "image-strip" => image_strip::show(ctx, w, rt.image_strip.entry(wm_id).or_default(), wm_id),
         "delve-grid" => delve_grid::show(ctx, w, wm_id),
+        "rpt-wealth" => wealth::show(ctx, w, &mut rt.wealth, wm_id),
+        "rpt-whispers" => whispers::show(ctx, w, &mut rt.whispers, wm_id),
+        "rpt-mapping" => mapping::show(ctx, w, &mut rt.mapping, wm_id),
+        "rpt-market" => market::show(ctx, w, &mut rt.market, wm_id),
+        "rpt-pob" => pob::show(ctx, w, &mut rt.pob, wm_id),
         _ => {}
     }
 }
@@ -92,6 +107,8 @@ pub fn handle_event(w: &mut WCtx<'_>, rt: &mut Runtime, ev: &HostEvent) {
         },
         HostEvent::GameLog(lines) => {
             item_check::on_game_log(w, &mut rt.item_check, lines);
+            whispers::on_game_log(w, &mut rt.whispers, lines);
+            mapping::on_game_log(w, &mut rt.mapping, lines);
         }
         _ => {}
     }
@@ -112,6 +129,11 @@ pub fn display_title(i18n: &I18n, kind: &WidgetKind, title: &str) -> String {
         WidgetKind::PriceCheck(_) => "price_check.name",
         WidgetKind::ItemCheck(_) => "item_check.name",
         WidgetKind::Menu(_) => "menu",
+        WidgetKind::Wealth(_) => return "Wealth".into(),
+        WidgetKind::Whispers(_) => return "Trade whispers".into(),
+        WidgetKind::Mapping(_) => return "Mapping".into(),
+        WidgetKind::Market(_) => return "Market".into(),
+        WidgetKind::Pob(_) => return "Path of Building".into(),
     };
     i18n.t(key)
 }

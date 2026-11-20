@@ -42,6 +42,11 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut MenuState, wm_id: u32) {
                 let btn = match kind {
                     "settings" => Button::new(ButtonKind::Tonal, "").icon(icons::SETTINGS),
                     "item-search" => Button::new(ButtonKind::Tonal, "").icon(icons::SEARCH),
+                    "rpt-wealth" => Button::new(ButtonKind::Tonal, title).icon(icons::ATTACH_MONEY),
+                    "rpt-whispers" => Button::new(ButtonKind::Tonal, title).icon(icons::FORUM),
+                    "rpt-mapping" => Button::new(ButtonKind::Tonal, title).icon(icons::MAP),
+                    "rpt-market" => Button::new(ButtonKind::Tonal, title).icon(icons::STOREFRONT),
+                    "rpt-pob" => Button::new(ButtonKind::Tonal, title).icon(icons::QUERY_STATS),
                     _ => Button::new(ButtonKind::Tonal, title),
                 };
                 if ui.add(btn.small().selected(shown)).clicked() {

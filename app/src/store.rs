@@ -65,3 +65,14 @@ pub fn import_apt_config() -> Option<Config> {
         Config::from_json(&s).map_err(|e| tracing::warn!("cannot import {}: {e}", p.display())).ok()
     })
 }
+
+/// Directory for app-generated data that isn't config (history, snapshots,
+/// caches). Linux: `$XDG_DATA_HOME/rusty-poe-trade`, Windows: `%APPDATA%\rusty-poe-trade\data`.
+/// Created on first use.
+pub fn data_dir() -> PathBuf {
+    let dir = directories::ProjectDirs::from("", "", "rusty-poe-trade")
+        .map(|d| d.data_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("rpt-data"));
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}

@@ -204,6 +204,17 @@ pub enum WidgetKind {
     ImageStrip(ImageStripWidget),
     #[serde(rename = "delve-grid")]
     DelveGrid(DelveGridWidget),
+    // ---- Rusty POE Trade only (not in Awakened PoE Trade)
+    #[serde(rename = "rpt-wealth")]
+    Wealth(crate::widgets::wealth::WealthWidget),
+    #[serde(rename = "rpt-whispers")]
+    Whispers(crate::widgets::whispers::WhispersWidget),
+    #[serde(rename = "rpt-mapping")]
+    Mapping(crate::widgets::mapping::MappingWidget),
+    #[serde(rename = "rpt-market")]
+    Market(crate::widgets::market::MarketWidget),
+    #[serde(rename = "rpt-pob")]
+    Pob(crate::widgets::pob::PobWidget),
 }
 
 impl WidgetKind {
@@ -218,6 +229,11 @@ impl WidgetKind {
             Self::ItemCheck(_) => "item-check",
             Self::ImageStrip(_) => "image-strip",
             Self::DelveGrid(_) => "delve-grid",
+            Self::Wealth(_) => "rpt-wealth",
+            Self::Whispers(_) => "rpt-whispers",
+            Self::Mapping(_) => "rpt-mapping",
+            Self::Market(_) => "rpt-market",
+            Self::Pob(_) => "rpt-pob",
         }
     }
     pub fn anchor_mut(&mut self) -> Option<&mut Anchor> {
@@ -227,6 +243,11 @@ impl WidgetKind {
             Self::Timer(w) => Some(&mut w.anchor),
             Self::StashSearch(w) => Some(&mut w.anchor),
             Self::ImageStrip(w) => Some(&mut w.anchor),
+            Self::Wealth(w) => Some(&mut w.anchor),
+            Self::Whispers(w) => Some(&mut w.anchor),
+            Self::Mapping(w) => Some(&mut w.anchor),
+            Self::Market(w) => Some(&mut w.anchor),
+            Self::Pob(w) => Some(&mut w.anchor),
             _ => None,
         }
     }
@@ -464,7 +485,7 @@ impl Default for Config {
         for (i, wd) in widgets.iter_mut().enumerate() {
             wd.wm_id = i as u32 + 1;
         }
-        Self {
+        let mut cfg = Self {
             config_version: CONFIG_VERSION,
             league_id: None,
             overlay_key: "Shift + Space".into(),
@@ -493,7 +514,9 @@ impl Default for Config {
             show_attach_notification: true,
             rpt: RptSettings::default(),
             extra: Map::new(),
-        }
+        };
+        cfg.ensure_rpt_widgets();
+        cfg
     }
 }
 
@@ -506,7 +529,30 @@ impl Config {
         if ver < CONFIG_VERSION as u64 {
             return Err(format!("config version {ver} is older than {CONFIG_VERSION}; please update Awakened PoE Trade first or start fresh"));
         }
-        serde_json::from_value(v).map_err(|e| e.to_string())
+        let mut cfg: Self = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        cfg.ensure_rpt_widgets();
+        Ok(cfg)
+    }
+
+    /// Add the Rusty-only singleton widgets to configs that predate them
+    /// (including imported APT configs). Hidden until opened from the menu.
+    pub fn ensure_rpt_widgets(&mut self) {
+        let all: [WidgetKind; 5] = [
+            WidgetKind::Wealth(Default::default()),
+            WidgetKind::Whispers(Default::default()),
+            WidgetKind::Mapping(Default::default()),
+            WidgetKind::Market(Default::default()),
+            WidgetKind::Pob(Default::default()),
+        ];
+        for kind in all {
+            if self.widgets.iter().any(|w| w.type_name() == kind.type_name()) {
+                continue;
+            }
+            let id = self.widgets.iter().map(|w| w.wm_id).max().unwrap_or(0) + 1;
+            let mut wd = w("", "hide", None, &["invisible-on-blur"], kind);
+            wd.wm_id = id;
+            self.widgets.push(wd);
+        }
     }
 
     pub fn to_json(&self) -> String {
