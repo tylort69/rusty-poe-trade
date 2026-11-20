@@ -83,9 +83,9 @@ pub struct Item {
     /// Price note, e.g. `~price 5 chaos`.
     #[serde(default)]
     pub note: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "mod_lines")]
     pub explicit_mods: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "mod_lines")]
     pub implicit_mods: Vec<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -256,5 +256,50 @@ mod tests {
         let tab = one.stash.into_tab();
         assert_eq!(tab.items[0].quantity(), 3);
         assert_eq!(tab.info.name, "dump");
+    }
+}
+
+/// Diagnostics: parse a raw `get-stash-items` body (tabs, items).
+#[doc(hidden)]
+pub fn parse_legacy_counts(body: &str) -> Result<(usize, usize), serde_json::Error> {
+    let r: LegacyStashResponse = serde_json::from_str(body)?;
+    Ok((r.tabs.len(), r.items.len()))
+}
+
+/// Mod lines: plain strings (API and older responses) or, in current
+/// `character-window` responses, objects like `{"description": "..."}`.
+fn mod_lines<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Line {
+        Text(String),
+        Obj(serde_json::Map<String, serde_json::Value>),
+    }
+    let lines: Option<Vec<Line>> = Option::deserialize(d)?;
+    Ok(lines
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|l| match l {
+            Line::Text(s) => Some(s),
+            Line::Obj(m) => ["description", "text", "name"].iter().find_map(|k| m.get(*k).and_then(|v| v.as_str()).map(str::to_owned)),
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod mod_line_tests {
+    /// Current `character-window` responses send mod lines as objects.
+    #[test]
+    fn object_and_string_mod_lines() {
+        let body = r#"{"numTabs":1,"tabs":[],"items":[
+            {"id":"a","w":1,"h":1,"x":0,"y":0,"typeLine":"Orb of Augmentation","baseType":"Orb of Augmentation","ilvl":0,"identified":true,"stackSize":40,
+             "explicitMods":[{"description":"Augments a magic item with a new random modifier"}]},
+            {"id":"b","w":1,"h":1,"x":1,"y":0,"typeLine":"Ruby Ring","baseType":"Ruby Ring","ilvl":80,"identified":true,
+             "implicitMods":["+25% to Fire Resistance"],"explicitMods":["+40 to maximum Life"]}
+        ]}"#;
+        let r: super::LegacyStashResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(r.items[0].explicit_mods, vec!["Augments a magic item with a new random modifier"]);
+        assert_eq!(r.items[1].implicit_mods, vec!["+25% to Fire Resistance"]);
+        assert_eq!(r.items[1].explicit_mods, vec!["+40 to maximum Life"]);
     }
 }
