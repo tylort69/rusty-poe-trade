@@ -55,11 +55,18 @@ pub struct Button<'a> {
     enabled: bool,
     small: bool,
     selected: Option<bool>,
+    hint: Option<String>,
 }
 
 impl<'a> Button<'a> {
     pub fn new(kind: ButtonKind, label: impl Into<String>) -> Self {
-        Self { kind, label: label.into(), icon: None, enabled: true, small: false, selected: None }
+        Self { kind, label: label.into(), icon: None, enabled: true, small: false, selected: None, hint: None }
+    }
+    /// Small dimmed text after the label inside the button, e.g. a hotkey: `[Alt + I]`.
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        let h = hint.into();
+        self.hint = (!h.is_empty()).then_some(h);
+        self
     }
     pub fn filled(label: impl Into<String>) -> Self {
         Self::new(ButtonKind::Filled, label)
@@ -122,10 +129,13 @@ impl Widget for Button<'_> {
         let icon_size = if self.small { 16.0 } else { 18.0 };
 
         let galley = ui.painter().layout_no_wrap(self.label.clone(), font, fg);
+        let hint = self.hint.as_ref().map(|h| ui.painter().layout_no_wrap(h.clone(), th.font(TypeRole::LabelSmall), fg));
+        const HINT_GAP: f32 = 5.0;
+        let hint_w = hint.as_ref().map_or(0.0, |g| HINT_GAP + g.size().x);
         let pad_x = if matches!(self.kind, ButtonKind::Text) { 12.0 } else if self.small { 12.0 } else { 24.0 };
         let icon_w = if self.icon.is_some() { icon_size + if self.label.is_empty() { 0.0 } else { 8.0 } } else { 0.0 };
         let lead_pad = if self.icon.is_some() && !self.label.is_empty() { pad_x - 8.0 } else { pad_x };
-        let width = (lead_pad + icon_w + galley.size().x + pad_x).max(height);
+        let width = (lead_pad + icon_w + galley.size().x + hint_w + pad_x).max(height);
         let (rect, resp) = ui.allocate_exact_size(vec2(width, height), if self.enabled { Sense::click() } else { Sense::hover() });
         resp.widget_info(|| WidgetInfo::labeled(Role::Button, self.enabled, &self.label));
 
@@ -144,13 +154,18 @@ impl Widget for Button<'_> {
             if o > 0.0 {
                 p.rect_filled(rect, radius, with_alpha(fg, o));
             }
-            let content_w = icon_w + galley.size().x;
+            let content_w = icon_w + galley.size().x + hint_w;
             let mut x = rect.center().x - content_w / 2.0;
             if let Some(icon) = self.icon {
                 p.text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, icon, FontId::new(icon_size, egui::FontFamily::Name(ICONS.into())), fg);
                 x += icon_w;
             }
+            let label_w = galley.size().x;
             p.galley_with_override_text_color(Pos2::new(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+            if let Some(h) = hint {
+                let hx = x + label_w + HINT_GAP;
+                p.galley_with_override_text_color(Pos2::new(hx, rect.center().y - h.size().y / 2.0 + 1.0), h, with_alpha(fg, 0.7));
+            }
         }
         if self.enabled {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)

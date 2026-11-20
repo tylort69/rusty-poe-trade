@@ -591,17 +591,13 @@ fn quick_bar(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState) {
                 Some(k) => tip.push_str(&format!("\nHotkey: {k}")),
                 None => tip.push_str("\nNo hotkey: set one under ⚙ → Hotkeys"),
             }
-            // button and its hotkey stay together when the row wraps
-            ui.scope(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                let b = rpt_m3::Button::tonal(label).icon(qa.icon()).small().enabled(target.is_some());
-                if ui.add(b).on_hover_text(&tip).on_disabled_hover_text(&tip).clicked() {
-                    clicked = Some(qa);
-                }
-                if let Some(k) = &key {
-                    rpt_m3::key_cap(ui, k).on_hover_text(format!("Hotkey for {}", qa.label()));
-                }
-            });
+            let mut b = rpt_m3::Button::tonal(label).icon(qa.icon()).small().enabled(target.is_some());
+            if let Some(k) = &key {
+                b = b.hint(format!("[{}]", k.replace(" + ", "+")));
+            }
+            if ui.add(b).on_hover_text(&tip).on_disabled_hover_text(&tip).clicked() {
+                clicked = Some(qa);
+            }
         }
     });
     let _ = c;
