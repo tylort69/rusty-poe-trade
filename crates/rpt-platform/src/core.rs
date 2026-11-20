@@ -447,6 +447,10 @@ impl Core {
         if !self.clip.begin_restore_shortly() {
             return;
         }
+        // From an overlay button (e.g. Whisper on a trade listing) the overlay
+        // has the keyboard: hand it back to the game first, or the chat
+        // keystrokes land in the overlay. No-op when the game is already active.
+        self.assert_game_active();
         let (clip, taps) = type_in_chat_plan(text, send);
         self.clip.write(&clip);
         self.taps(&taps);
