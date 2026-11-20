@@ -210,6 +210,10 @@ const OVERLAY_CLASS: &str = "rusty-poe-trade";
 /// and keybinds such as fullscreen would hit the overlay instead of the game.
 /// The overlay still gets keyboard input when active via X11 `SetInputFocus`. Nothing is written to the user's config;
 /// the rule disappears on `hyprctl reload`. `RPT_NO_HYPR_RULES=1` skips it.
+/// Title of the overlay window (main.rs). The no-focus rule must match only
+/// it: popped-out windows share the class and need pointer/keyboard input.
+const OVERLAY_TITLE: &str = "Rusty POE Trade";
+
 /// Titles of popped-out tool windows (regex alternatives).
 const POPOUT_TITLES: &str = "Trade whispers";
 
@@ -234,16 +238,15 @@ fn hyprland_overlay_rule_inner() {
             Err(_) => false,
         }
     };
-    // Hyprland 0.5x+ (Lua config)
+    // Hyprland 0.5x+ (Lua config). Fixed names: registering a rule again
+    // under the same name updates it instead of piling up copies.
     let lua = format!(
-        "hl.window_rule({{ name = \"rusty-poe-trade-overlay-{}\", match = {{ class = \"^({OVERLAY_CLASS})$\" }}, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})",
-        std::process::id()
+        "hl.window_rule({{ name = \"rusty-poe-trade-overlay\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({OVERLAY_TITLE})$\" }}, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})"
     );
     // Popped-out tool windows (e.g. "Trade whispers") share the class but
     // must float so they can be dragged to any monitor instead of tiling.
     let popout_lua = format!(
-        "hl.window_rule({{ name = \"rusty-poe-trade-popout-{}\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({POPOUT_TITLES})$\" }}, float = true }})",
-        std::process::id()
+        "hl.window_rule({{ name = \"rusty-poe-trade-popout\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({POPOUT_TITLES})$\" }}, float = true, no_focus = false }})"
     );
     if run(&["eval", &lua]) {
         tracing::info!("Hyprland: added runtime window rule for the overlay (no focus/blur/shadow/dim/anim)");
@@ -258,7 +261,7 @@ fn hyprland_overlay_rule_inner() {
     // Older Hyprland (hyprlang config)
     let ok = ["nofocus", "noblur", "noshadow", "nodim", "noanim", "noborder"]
         .iter()
-        .all(|r| run(&["keyword", "windowrulev2", &format!("{r}, class:^({OVERLAY_CLASS})$")]));
+        .all(|r| run(&["keyword", "windowrulev2", &format!("{r}, class:^({OVERLAY_CLASS})$, title:^({OVERLAY_TITLE})$")]));
     if ok {
         tracing::info!("Hyprland: added runtime windowrulev2 rules for the overlay");
     } else {

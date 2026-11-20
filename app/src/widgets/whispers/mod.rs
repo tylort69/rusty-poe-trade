@@ -386,6 +386,9 @@ pub fn show_popout(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState
         if hovered {
             st.book.mark_all_seen();
         }
+        if vctx.input(|i| i.pointer.any_pressed()) {
+            tracing::debug!("whispers pop-out: click received");
+        }
         // remember where the user put it
         if let (Some(o), Some(inn)) = (outer, inner) {
             let pos = [o.min.x, o.min.y];
