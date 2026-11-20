@@ -10,7 +10,7 @@ use crate::emit::Emitter;
 use crate::types::{NoDownloadReason, PlatformEvent, UpdateInfo};
 
 /// `owner/repo` on GitHub. Placeholder until the project is published.
-pub const GITHUB_REPO: &str = "OWNER/rusty-poe-trade";
+pub const GITHUB_REPO: &str = "tylort69/rusty-poe-trade";
 /// Version of this build (workspace version).
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CHECK_INTERVAL: Duration = Duration::from_secs(16 * 60 * 60);

@@ -6,7 +6,7 @@ members = ["crates/*", "app"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/OWNER/rusty-poe-trade"
+repository = "https://github.com/tylort69/rusty-poe-trade"
 authors = ["Rusty POE Trade contributors"]
 rust-version = "1.88"
 

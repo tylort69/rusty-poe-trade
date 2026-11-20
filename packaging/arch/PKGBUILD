@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Path of Exile price-check & trade overlay — Rust rewrite of Awakened PoE Trade with a Material You UI"
 arch=('x86_64')
-url="https://github.com/OWNER/rusty-poe-trade"
+url="https://github.com/tylort69/rusty-poe-trade"
 license=('MIT')
 # The overlay is an X11 window (the game runs under Proton/Wine via XWayland).
 depends=('gcc-libs' 'glibc' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libxtst' 'libxkbcommon-x11' 'libglvnd' 'gtk3' 'libxdo' 'dbus')

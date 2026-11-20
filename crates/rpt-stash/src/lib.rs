@@ -35,4 +35,4 @@ pub const GGG_DISCLAIMER: &str = "This product isn't affiliated with or endorsed
 
 /// Generic contact for the User-Agent GGG asks API clients to send.
 /// Deliberately the project page, never a personal address.
-pub const CONTACT: &str = "https://github.com/OWNER/rusty-poe-trade";
+pub const CONTACT: &str = "https://github.com/tylort69/rusty-poe-trade";
