@@ -28,6 +28,39 @@ use crate::i18n::I18n;
 use crate::services::Services;
 use crate::wm::OverlayState;
 
+/// Tools that can be opened from the Settings → Tools page or their own hotkey.
+/// (widget type, title, Material icon, one-line description)
+pub const TOOLS: &[(&str, &str, &str, &str)] = &[
+    ("rpt-wealth", "Wealth", rpt_m3::icons::ATTACH_MONEY, "Stash value, net-worth history, dust and bulk-sell lists"),
+    ("rpt-market", "Market", rpt_m3::icons::STOREFRONT, "7-day movers, favorites, saved searches and price history"),
+    ("rpt-whispers", "Trade whispers", rpt_m3::icons::FORUM, "Incoming and outgoing trades with invite / trade / kick"),
+    ("rpt-mapping", "Mapping", rpt_m3::icons::MAP, "Map timer, maps per hour, deaths and history"),
+    ("rpt-pob", "Path of Building", rpt_m3::icons::QUERY_STATS, "Your PoB builds: stats, skills, items, tree"),
+    ("item-search", "Item search", rpt_m3::icons::SEARCH, "Look up any item's price by name"),
+];
+
+/// Open a tool (or Settings with `"settings"`) and make the overlay
+/// interactive. If it's already open in an active overlay, close it and return
+/// to the game instead, so the same hotkey toggles.
+pub fn open_tool(w: &mut WCtx<'_>, tool: &str) {
+    let Some(id) = crate::wm::id_of(w.cfg, tool) else { return };
+    let shown = w.cfg.widgets.iter().any(|x| x.wm_id == id && x.wants_show());
+    if shown && w.st.active {
+        crate::wm::hide(w.cfg, id);
+        w.host.push(crate::host::HostCommand::FocusGame);
+    } else {
+        if tool == "settings" {
+            settings::open_tools(w.cfg);
+        } else {
+            crate::wm::show(w.cfg, id);
+        }
+        if !w.st.active {
+            w.host.push(crate::host::HostCommand::FocusOverlay);
+        }
+    }
+    w.save_requested = true;
+}
+
 /// Everything a widget may touch while drawing.
 pub struct WCtx<'a> {
     pub cfg: &'a mut Config,
@@ -89,7 +122,9 @@ pub fn handle_event(w: &mut WCtx<'_>, rt: &mut Runtime, ev: &HostEvent) {
     pob::on_item_text(&mut rt.pob, ev);
     match ev {
         HostEvent::WidgetAction { target } => {
-            if let Some(id) = target.strip_prefix("stopwatch-start-stop:").and_then(|s| s.parse().ok()) {
+            if let Some(tool) = target.strip_prefix("open-tool:") {
+                open_tool(w, tool);
+            } else if let Some(id) = target.strip_prefix("stopwatch-start-stop:").and_then(|s| s.parse().ok()) {
                 rt.timers.entry(id).or_default().toggle();
             } else if let Some(id) = target.strip_prefix("stopwatch-reset:").and_then(|s| s.parse().ok()) {
                 rt.timers.entry(id).or_default().reset();

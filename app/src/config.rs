@@ -68,6 +68,10 @@ pub struct RptSettings {
     /// Where anchored widgets live on wide screens:
     /// [`WIDGET_AREA_AUTO`] | [`WIDGET_AREA_FULL`] | [`WIDGET_AREA_CENTER`].
     pub widget_area: String,
+    /// Opens the Settings window (on its Tools page) from in game.
+    pub settings_key: Option<String>,
+    /// Per-tool hotkeys: widget type (`rpt-wealth`, `item-search`, …) → hotkey.
+    pub tool_keys: std::collections::BTreeMap<String, String>,
 }
 
 pub const ZOOM_MIN: f32 = 0.5;
@@ -119,6 +123,8 @@ impl Default for RptSettings {
             account: AccountSettings::default(),
             overlay_zoom: 1.0,
             widget_area: WIDGET_AREA_AUTO.into(),
+            settings_key: Some("Ctrl + Shift + Space".into()),
+            tool_keys: Default::default(),
         }
     }
 }
@@ -662,6 +668,14 @@ impl Config {
             push(k.clone(), false, copy("price-check", true));
         }
         push(self.overlay_key.clone(), true, ShortcutKind::ToggleOverlay);
+        if let Some(k) = self.rpt.settings_key.as_ref().filter(|k| !k.is_empty()) {
+            push(k.clone(), true, ShortcutKind::TriggerEvent { target: "open-tool:settings".into() });
+        }
+        for (tool, k) in &self.rpt.tool_keys {
+            if !k.is_empty() && self.widget(tool).is_some() {
+                push(k.clone(), true, ShortcutKind::TriggerEvent { target: format!("open-tool:{tool}") });
+            }
+        }
         let ic = self.item_check();
         for (key, target) in [
             (&ic.wiki_key, "open-wiki"),
@@ -720,6 +734,24 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_and_settings_hotkeys_register() {
+        let mut c = Config::default();
+        c.rpt.tool_keys.insert("rpt-wealth".into(), "Alt + W".into());
+        c.rpt.tool_keys.insert("no-such-widget".into(), "Alt + Q".into());
+        let s = c.shortcuts();
+        let find = |k: &str| s.iter().find(|x| x.shortcut == k).map(|x| x.action.clone());
+        assert!(matches!(find("Ctrl + Shift + Space"), Some(ShortcutKind::TriggerEvent { target }) if target == "open-tool:settings"));
+        assert!(matches!(find("Alt + W"), Some(ShortcutKind::TriggerEvent { target }) if target == "open-tool:rpt-wealth"));
+        assert!(find("Alt + Q").is_none(), "unknown tools are ignored");
+        // old configs without the new keys still load, with the default settings key
+        let mut v: Value = serde_json::from_str(&c.to_json()).unwrap();
+        v["rpt"].as_object_mut().unwrap().remove("settingsKey");
+        v["rpt"].as_object_mut().unwrap().remove("toolKeys");
+        let back = Config::from_json(&v.to_string()).unwrap();
+        assert_eq!(back.rpt.settings_key.as_deref(), Some("Ctrl + Shift + Space"));
+    }
 
     #[test]
     fn default_roundtrip() {

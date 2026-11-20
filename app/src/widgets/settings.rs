@@ -11,6 +11,7 @@
 
 mod account;
 pub mod hotkey;
+mod tools;
 pub mod leagues;
 mod pages;
 mod widget_pages;
@@ -25,9 +26,11 @@ use crate::wm;
 
 const WIDGET_FLAG: &str = "settings::widget=";
 const ACCOUNT_FLAG: &str = "settings::page=account";
+const TOOLS_FLAG: &str = "settings::page=tools";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
+    Tools,
     Hotkeys,
     Chat,
     General,
@@ -52,6 +55,7 @@ impl Page {
             Self::General => icons::TUNE,
             Self::Appearance => icons::PALETTE,
             Self::Account => icons::ACCOUNT_CIRCLE,
+            Self::Tools => icons::WIDGETS,
             Self::Widgets => icons::WIDGETS,
             Self::PriceCheck => icons::PRICE_CHECK,
             Self::Maps => icons::MAP,
@@ -71,6 +75,7 @@ impl Page {
             Self::General => "settings.general",
             Self::Appearance => return "Appearance".into(),
             Self::Account => return "Account".into(),
+            Self::Tools => return "Tools".into(),
             Self::Widgets => return "Widgets".into(),
             Self::PriceCheck => "price_check.name",
             Self::Maps => "map_check.name",
@@ -95,6 +100,7 @@ fn menu_by_type(t: Option<&str>) -> Vec<Vec<Page>> {
         Some("price-check") => vec![vec![PriceCheck]],
         Some("item-search") => vec![vec![ItemSearch]],
         _ => vec![
+            vec![Tools],
             vec![Hotkeys, Chat],
             vec![General, Appearance, Account, Widgets],
             vec![PriceCheck, Maps, ItemCheck, ItemSearch],
@@ -120,7 +126,7 @@ pub struct SettingsState {
 impl Default for SettingsState {
     fn default() -> Self {
         Self {
-            page: Page::Hotkeys,
+            page: Page::Tools,
             target: None,
             snapshot: None,
             last_pass: 0,
@@ -145,6 +151,13 @@ pub fn open_for(cfg: &mut Config, widget_id: u32) {
 pub fn open_account(cfg: &mut Config) {
     let Some(sid) = wm::id_of(cfg, "settings") else { return };
     wm::set_flag(cfg, sid, ACCOUNT_FLAG, true);
+    wm::show(cfg, sid);
+}
+
+/// Open the full settings window on the Tools page (the settings hotkey).
+pub fn open_tools(cfg: &mut Config) {
+    let Some(sid) = wm::id_of(cfg, "settings") else { return };
+    wm::set_flag(cfg, sid, TOOLS_FLAG, true);
     wm::show(cfg, sid);
 }
 
@@ -201,6 +214,9 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut SettingsState, wm_id: u32)
     }
     if wm::set_flag(w.cfg, wm_id, ACCOUNT_FLAG, false) {
         (st.target, st.page) = (None, Page::Account);
+    }
+    if wm::set_flag(w.cfg, wm_id, TOOLS_FLAG, false) {
+        (st.target, st.page) = (None, Page::Tools);
     }
     if st.target.is_some_and(|id| !w.cfg.widgets.iter().any(|x| x.wm_id == id)) {
         st.target = None;
@@ -328,6 +344,7 @@ fn draw_page(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
         Page::General => pages::general(ui, w, st),
         Page::Appearance => pages::appearance(ui, w, st),
         Page::Account => account::page(ui, w, st),
+        Page::Tools => tools::page(ui, w, st),
         Page::Widgets => pages::widgets(ui, w, st),
         Page::Debug => pages::debug(ui, w, st),
         Page::About => pages::about(ui, w, st),
@@ -392,7 +409,7 @@ mod tests {
         let strip_id = wm::id_of(&cfg, "image-strip").unwrap();
         let delve_id = wm::id_of(&cfg, "delve-grid").unwrap();
         let pages = [
-            Page::Hotkeys, Page::Chat, Page::General, Page::Appearance, Page::Widgets, Page::PriceCheck, Page::Maps,
+            Page::Tools, Page::Hotkeys, Page::Chat, Page::General, Page::Appearance, Page::Widgets, Page::PriceCheck, Page::Maps,
             Page::ItemCheck, Page::ItemSearch, Page::Debug, Page::About,
         ];
         let mut rt_strip = crate::widgets::image_strip::ImageStripState::default();

@@ -93,7 +93,9 @@ impl App {
                     self.st.game_focused = *game;
                     wm::on_focus_change(&mut self.cfg, self.st.active);
                     if self.st.active {
-                        ctx.send_viewport_cmd(ViewportCommand::Focus);
+                        if wm_focus_allowed() {
+                            ctx.send_viewport_cmd(ViewportCommand::Focus);
+                        }
                     } else {
                         self.save_now();
                     }
@@ -132,7 +134,9 @@ impl App {
                 _ => {}
             }
             if let HostEvent::ItemText { focus_overlay: true, .. } = &ev {
-                ctx.send_viewport_cmd(ViewportCommand::Focus);
+                if wm_focus_allowed() {
+                    ctx.send_viewport_cmd(ViewportCommand::Focus);
+                }
             }
             let screen = self.screen_rect(ctx);
             let mut w = WCtx {
@@ -175,6 +179,51 @@ impl App {
         let z = self.cfg.rpt.zoom();
         if ctx.zoom_factor() != z {
             ctx.set_zoom_factor(z);
+        }
+    }
+
+    /// While the overlay has focus the global hotkeys are unregistered (like
+    /// upstream), so the overlay key, the settings key and tool keys are
+    /// matched here from window key events: overlay key → back to the game,
+    /// settings / tool key → toggle that tool.
+    fn overlay_hotkeys(&mut self, ctx: &Context) {
+        if !self.st.active || self.windowed || ctx.egui_wants_keyboard_input() || self.rt.settings.cap.active.is_some() {
+            return;
+        }
+        use crate::widgets::settings::hotkey::{hotkey_to_string, key_name};
+        let pressed: Vec<String> = ctx.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Key { key, physical_key, pressed: true, repeat: false, modifiers, .. } => {
+                        key_name(physical_key.unwrap_or(*key)).map(|n| hotkey_to_string(&[n], modifiers.ctrl || modifiers.command, modifiers.shift, modifiers.alt))
+                    }
+                    _ => None,
+                })
+                .collect()
+        });
+        for k in pressed {
+            let tool = if self.cfg.rpt.settings_key.as_deref() == Some(k.as_str()) {
+                Some("settings".to_owned())
+            } else {
+                self.cfg.rpt.tool_keys.iter().find(|(_, v)| **v == k).map(|(t, _)| t.clone())
+            };
+            if let Some(tool) = tool {
+                let screen = self.screen_rect(ctx);
+                let mut w = WCtx {
+                    cfg: &mut self.cfg,
+                    st: self.st,
+                    i18n: &self.i18n,
+                    host: &mut self.host,
+                    services: &self.services,
+                    screen,
+                    save_requested: false,
+                };
+                widgets::open_tool(&mut w, &tool);
+                self.dirty_since.get_or_insert_with(Instant::now);
+            } else if k == self.cfg.overlay_key {
+                self.host.push(HostCommand::FocusGame);
+            }
         }
     }
 
@@ -333,6 +382,7 @@ impl eframe::App for App {
             self.host.push(HostCommand::FocusGame);
         }
         self.keyboard_zoom(ctx);
+        self.overlay_hotkeys(ctx);
         self.handle_events(ctx);
         if self.services.sync_into(&mut self.cfg) { self.dirty_since.get_or_insert_with(Instant::now); }
         self.sync_zoom(ctx);
@@ -399,4 +449,11 @@ mod tests {
         }
         assert_eq!(z, 3.0);
     }
+}
+
+/// On Linux the overlay is an unmanaged (override-redirect) X11 window and the
+/// platform layer gives it input focus directly. Asking the window manager to
+/// activate it would make tiling compositors (Hyprland) un-fullscreen the game.
+fn wm_focus_allowed() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("RPT_MANAGED_OVERLAY").is_some()
 }

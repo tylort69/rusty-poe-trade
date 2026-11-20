@@ -167,6 +167,7 @@ impl PlatformGlue {
         };
         match cmd {
             HostCommand::FocusGame => p.focus_game(),
+            HostCommand::FocusOverlay => p.set_overlay_active(true),
             HostCommand::StashSearch(t) => p.stash_search(&t),
             HostCommand::PasteInChat { text, send } => p.paste_in_chat(&text, send),
             HostCommand::TrackArea { hold_key, close_threshold, from, area, dpr } => p.track_area(rpt_platform::TrackArea {

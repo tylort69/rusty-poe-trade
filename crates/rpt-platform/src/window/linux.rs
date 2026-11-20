@@ -11,6 +11,11 @@
 //! * Focus: `_NET_ACTIVE_WINDOW` client message with source indication 2
 //!   ("pager"), which focus-stealing prevention (KWin, Mutter) honours; for
 //!   override-redirect windows `SetInputFocus` is used instead.
+//! * The overlay is turned into an override-redirect ("unmanaged") window,
+//!   like X11 menus and tooltips. Tiling compositors (Hyprland, Sway…) then
+//!   don't tile or focus it, and draw it above a fullscreen game instead of
+//!   kicking the game out of fullscreen when the overlay takes input.
+//!   Set `RPT_MANAGED_OVERLAY=1` to keep a normal managed window.
 
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
@@ -33,6 +38,7 @@ struct Shared {
     title_changed: bool,
     target: Option<Window>,
     overlay: Option<Window>,
+    overlay_unmanaged: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -71,7 +77,7 @@ impl Tracker {
         let (fconn, fscreen) = RustConnection::connect(None)?;
         let froot = fconn.setup().roots[fscreen].root;
 
-        let shared = Arc::new(Mutex::new(Shared { title, title_changed: true, target: None, overlay: None }));
+        let shared = Arc::new(Mutex::new(Shared { title, title_changed: true, target: None, overlay: None, overlay_unmanaged: false }));
         let sh = shared.clone();
         std::thread::Builder::new().name("rpt-window-tracker".into()).spawn(move || {
             let mut t = Loop { conn, root, atoms, shared: sh, sink, target: None, fg: false, bounds: None };
@@ -91,15 +97,62 @@ impl Tracker {
     }
 
     pub fn set_overlay(&self, handle: OverlayHandle) {
-        self.shared.lock().overlay = match handle {
+        let win = match handle {
             OverlayHandle::X11 { window } => Some(window),
             _ => None,
         };
+        let unmanaged = match win {
+            Some(w) if std::env::var_os("RPT_MANAGED_OVERLAY").is_none() => match self.make_unmanaged(w) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!("could not make the overlay an unmanaged window: {e}");
+                    false
+                }
+            },
+            _ => false,
+        };
+        let mut s = self.shared.lock();
+        s.overlay = win;
+        s.overlay_unmanaged = unmanaged;
+    }
+
+    /// Re-map the overlay as override-redirect so the window manager stops managing it.
+    fn make_unmanaged(&self, win: Window) -> anyhow::Result<()> {
+        let guard = self.focus_conn.lock();
+        let conn = &guard.0;
+        let attrs = conn.get_window_attributes(win)?.reply()?;
+        if attrs.override_redirect {
+            return Ok(());
+        }
+        let mapped = attrs.map_state != x11rb::protocol::xproto::MapState::UNMAPPED;
+        if mapped {
+            conn.unmap_window(win)?.check()?;
+        }
+        conn.change_window_attributes(win, &ChangeWindowAttributesAux::new().override_redirect(1))?.check()?;
+        if mapped {
+            conn.map_window(win)?.check()?;
+        }
+        conn.flush()?;
+        tracing::info!("overlay window {win:#x} is now unmanaged (override-redirect)");
+        Ok(())
     }
 
     pub fn focus_game(&self) -> bool {
-        let target = self.shared.lock().target;
-        target.is_some_and(|w| self.focus(w))
+        let (target, unmanaged) = {
+            let s = self.shared.lock();
+            (s.target, s.overlay_unmanaged)
+        };
+        let Some(w) = target else { return false };
+        if unmanaged {
+            // The WM still thinks the game is active (an unmanaged overlay never
+            // becomes `_NET_ACTIVE_WINDOW`), so its activation request is a no-op:
+            // hand the X input focus back explicitly.
+            let guard = self.focus_conn.lock();
+            if let Ok(c) = guard.0.set_input_focus(InputFocus::PARENT, w, x11rb::CURRENT_TIME) {
+                let _ = c.check();
+            }
+        }
+        self.focus(w)
     }
 
     pub fn focus_overlay(&self) -> bool {

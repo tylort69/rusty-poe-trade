@@ -9,6 +9,8 @@
 pub enum HostCommand {
     /// `OVERLAY->MAIN::focus-game`
     FocusGame,
+    /// Make the overlay interactive (take input) without toggling.
+    FocusOverlay,
     /// `CLIENT->MAIN::user-action` stash-search
     StashSearch(String),
     PasteInChat { text: String, send: bool },
