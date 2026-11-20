@@ -53,6 +53,39 @@ fn max_size(a: &Anchor, screen: Rect) -> Vec2 {
     Vec2::new(screen.width() * w / 100.0, screen.height() * h / 100.0)
 }
 
+/// 16:9 — the widest aspect the game's own HUD is designed for.
+pub const WIDE_ASPECT: f32 = 16.0 / 9.0;
+/// "auto" only centers when the game is noticeably wider than 16:9, so
+/// rounding (e.g. 1366×768, 2560×1439 after a title bar) never kicks in.
+pub const AUTO_EPSILON: f32 = 0.02;
+
+/// The region anchored widgets are laid out in (Rusty-only, `rpt.widgetArea`).
+///
+/// On ultrawide (21:9, 32:9) games the HUD and the stash/inventory panels sit
+/// at the real screen edges, but widget anchors expressed in percent of the
+/// full width end up far in the corners. "auto" (when wider than 16:9) and
+/// "center-16:9" (whenever wider) lay anchored widgets out in a centered 16:9
+/// region instead; "full" uses the whole game. Narrower/portrait screens are
+/// never letterboxed. Price-check/item-check placement next to the in-game
+/// panels keeps using the real game rect (`WCtx::screen`).
+pub fn widget_area(screen: Rect, mode: &str) -> Rect {
+    let (w, h) = (screen.width(), screen.height());
+    if w <= 0.0 || h <= 0.0 {
+        return screen;
+    }
+    let aspect = w / h;
+    let center = match mode {
+        crate::config::WIDGET_AREA_FULL => false,
+        crate::config::WIDGET_AREA_CENTER => aspect > WIDE_ASPECT,
+        _ => aspect > WIDE_ASPECT + AUTO_EPSILON,
+    };
+    if !center {
+        return screen;
+    }
+    let width = h * WIDE_ASPECT;
+    Rect::from_center_size(screen.center(), Vec2::new(width, h))
+}
+
 pub fn anchor_pos(a: &Anchor, screen: Rect) -> Pos2 {
     Pos2::new(screen.left() + screen.width() * a.x / 100.0, screen.top() + screen.height() * a.y / 100.0)
 }
@@ -73,7 +106,9 @@ pub fn anchored<R>(
     opts: ChromeOpts,
     body: impl FnOnce(&mut Ui, &mut WCtx<'_>) -> R,
 ) -> ChromeResult<R> {
-    let screen = w.screen;
+    // Anchors (and drag deltas) are percentages of the widget area, not of the
+    // full (possibly ultrawide) game.
+    let screen = widget_area(w.screen, &w.cfg.rpt.widget_area);
     let Some(widget) = w.cfg.widgets.iter_mut().find(|x| x.wm_id == wm_id) else {
         return ChromeResult { inner: None, rect: Rect::NOTHING, hide: false, remove: false };
     };
@@ -189,4 +224,77 @@ pub fn exclusive_window<R>(ctx: &Context, id: &str, size: Vec2, pos: Option<Pos2
     })
     .inner
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{WIDGET_AREA_AUTO as AUTO, WIDGET_AREA_CENTER as CENTER, WIDGET_AREA_FULL as FULL};
+    use egui::{pos2, vec2};
+
+    fn screen(w: f32, h: f32) -> Rect {
+        Rect::from_min_size(Pos2::ZERO, vec2(w, h))
+    }
+
+    fn close(a: Rect, b: Rect) -> bool {
+        (a.min - b.min).length() < 0.01 && (a.max - b.max).length() < 0.01
+    }
+
+    #[test]
+    fn sixteen_nine_is_untouched() {
+        for s in [screen(1920.0, 1080.0), screen(2560.0, 1440.0), screen(1280.0, 720.0)] {
+            for mode in [AUTO, FULL, CENTER] {
+                assert!(close(widget_area(s, mode), s), "{mode} {s:?}");
+            }
+        }
+        // 1366×768 is a hair wider than 16:9: auto leaves it alone
+        assert!(close(widget_area(screen(1366.0, 768.0), AUTO), screen(1366.0, 768.0)));
+    }
+
+    #[test]
+    fn ultrawide_21_9_centers() {
+        let s = screen(3440.0, 1440.0);
+        let a = widget_area(s, AUTO);
+        assert!((a.width() - 2560.0).abs() < 0.01 && a.height() == 1440.0);
+        assert!((a.left() - 440.0).abs() < 0.01 && (a.right() - 3000.0).abs() < 0.01);
+        assert!(close(widget_area(s, CENTER), a));
+        assert!(close(widget_area(s, FULL), s));
+    }
+
+    #[test]
+    fn super_ultrawide_32_9_centers() {
+        let s = screen(5120.0, 1440.0);
+        let a = widget_area(s, AUTO);
+        assert!(close(a, Rect::from_min_size(pos2(1280.0, 0.0), vec2(2560.0, 1440.0))));
+        assert!(close(widget_area(s, FULL), s));
+    }
+
+    #[test]
+    fn offset_screens_stay_centered() {
+        // e.g. the overlay at a zoom where points don't start at 0
+        let s = Rect::from_min_size(pos2(100.0, 50.0), vec2(2580.0, 1080.0));
+        let a = widget_area(s, CENTER);
+        assert!((a.center() - s.center()).length() < 0.01);
+        assert!((a.width() - 1920.0).abs() < 0.01 && a.top() == 50.0 && a.bottom() == 1130.0);
+    }
+
+    #[test]
+    fn portrait_and_narrow_are_never_letterboxed() {
+        for s in [screen(1080.0, 1920.0), screen(1600.0, 1200.0), screen(1920.0, 1200.0)] {
+            for mode in [AUTO, FULL, CENTER] {
+                assert!(close(widget_area(s, mode), s), "{mode} {s:?}");
+            }
+        }
+        assert!(close(widget_area(screen(0.0, 0.0), AUTO), screen(0.0, 0.0)));
+    }
+
+    #[test]
+    fn anchors_resolve_inside_area() {
+        let s = screen(3440.0, 1440.0);
+        let area = widget_area(s, AUTO);
+        let a = Anchor { pos: "tr".into(), x: 100.0, y: 0.0 };
+        let p = anchor_pos(&a, area);
+        assert!((p.x - 3000.0).abs() < 0.01 && p.y == 0.0);
+        assert!((max_size(&a, area).x - 2560.0).abs() < 0.01);
+    }
 }

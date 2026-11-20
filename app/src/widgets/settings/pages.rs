@@ -94,6 +94,7 @@ const TRANSPARENT_BG: &str = "rgba(255, 255, 255, 0)";
 
 pub fn general(ui: &mut Ui, w: &mut WCtx<'_>, _st: &mut SettingsState) {
     let i18n = w.i18n;
+    let screen = w.screen;
     let cfg = &mut *w.cfg;
 
     rpt_m3::section_header(ui, i18n.t("settings.language"));
@@ -167,6 +168,43 @@ pub fn general(ui: &mut Ui, w: &mut WCtx<'_>, _st: &mut SettingsState) {
         switch_setting(ui, &i18n.t("settings.overlay_bg_focus_game"), None, &mut cfg.overlay_background_close);
     }
     switch_setting(ui, &i18n.t("settings.show_overlay_ready"), None, &mut cfg.show_attach_notification);
+    widget_area_setting(ui, &mut cfg.rpt.widget_area, screen);
+}
+
+/// Ultrawide placement (`rpt.widgetArea`).
+fn widget_area_setting(ui: &mut Ui, mode: &mut String, screen: egui::Rect) {
+    use crate::config::{WIDGET_AREA_AUTO, WIDGET_AREA_CENTER, WIDGET_AREA_FULL};
+    let th = theme(ui.ctx());
+    let c = th.colors;
+    rpt_m3::setting_row(ui, Some(ICON_ASPECT_RATIO), "Widget area", Some("Where anchored widgets are placed on ultrawide screens"), |ui| {
+        rpt_m3::segmented(
+            ui,
+            mode,
+            &[(WIDGET_AREA_AUTO.to_owned(), "Auto"), (WIDGET_AREA_FULL.to_owned(), "Full width"), (WIDGET_AREA_CENTER.to_owned(), "Center 16:9")],
+        );
+    });
+    let area = crate::widgets::chrome::widget_area(screen, mode);
+    let current = if area == screen {
+        format!("Now: the full game area ({:.0}×{:.0} pt).", screen.width(), screen.height())
+    } else {
+        format!(
+            "Now: a centered {:.0}×{:.0} pt region of the {:.0}×{:.0} pt game.",
+            area.width(),
+            area.height(),
+            screen.width(),
+            screen.height()
+        )
+    };
+    ui.label(
+        RichText::new(format!(
+            "Auto keeps widgets (timers, stash search, menu…) inside a centered 16:9 region when the game is wider than 16:9, \
+             so they stay near the middle of 21:9 and 32:9 screens; Center 16:9 does so whenever the game is wider than 16:9, \
+             Full width uses the whole game. Price check and item info always open next to the in-game stash/inventory panels \
+             at the real screen edges. {current}"
+        ))
+        .font(th.font(TypeRole::BodySmall))
+        .color(c.on_surface_variant),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -244,11 +282,20 @@ pub fn appearance(ui: &mut Ui, w: &mut WCtx<'_>, _st: &mut SettingsState) {
     });
     let mut fs = cfg.font_size as f64;
     let fs_label = w.i18n.t("settings.font_size");
-    rpt_m3::setting_row(ui, Some(icons::FORMAT_SIZE), &fs_label, Some(&format!("{} px", fs)), |ui| {
+    rpt_m3::setting_row(ui, Some(icons::FORMAT_SIZE), &fs_label, Some(&format!("{} px · text only", fs)), |ui| {
         if rpt_m3::slider(ui, &mut fs, 10.0..=24.0, 1.0, 220.0).changed() {
             cfg.font_size = fs as f32;
         }
     });
+    zoom_row(ui, &mut cfg.rpt);
+    ui.label(
+        RichText::new(
+            "Zoom scales the whole overlay — windows, icons, spacing and text (Ctrl + / Ctrl − / Ctrl 0 while the overlay is focused). \
+             Font size only changes text size inside the same layout.",
+        )
+        .font(th.font(TypeRole::BodySmall))
+        .color(c.on_surface_variant),
+    );
 
     rpt_m3::section_header(ui, "Preview");
     ui.horizontal_wrapped(|ui| {
@@ -275,6 +322,36 @@ pub fn appearance(ui: &mut Ui, w: &mut WCtx<'_>, _st: &mut SettingsState) {
         let mut on = true;
         rpt_m3::switch(ui, &mut on);
         let _ = ui.add(Chip::filter("Chip", true));
+    });
+}
+
+/// Material Icons Round `zoom_in` (not in `rpt_m3::icons`).
+const ICON_ZOOM_IN: &str = "\u{e8ff}";
+/// Material Icons Round `aspect_ratio`.
+const ICON_ASPECT_RATIO: &str = "\u{e85b}";
+
+/// Overlay zoom slider (50–300 %, 10 % steps) with reset. Clicks and the reset
+/// button apply immediately (live preview). While dragging, the value is held in
+/// temp memory and applied on release: applying it mid-drag would rescale the
+/// slider under the pointer and make the handle run away.
+fn zoom_row(ui: &mut Ui, rpt: &mut crate::config::RptSettings) {
+    let id = egui::Id::unique("rpt-settings-zoom-drag");
+    let committed = (rpt.zoom() as f64 * 100.0).round();
+    let mut pct = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(committed);
+    let label = format!("{pct:.0} % · everything");
+    rpt_m3::setting_row(ui, Some(ICON_ZOOM_IN), "Overlay zoom", Some(&label), |ui| {
+        if ui.add(Button::text("").icon(icons::RESTART_ALT).small().enabled(committed != 100.0)).on_hover_text("Reset to 100 %").clicked() {
+            rpt.overlay_zoom = 1.0;
+            ui.data_mut(|d| d.remove::<f64>(id));
+            return;
+        }
+        let r = rpt_m3::slider(ui, &mut pct, 50.0..=300.0, 10.0, 220.0);
+        if r.dragged() {
+            ui.data_mut(|d| d.insert_temp(id, pct));
+        } else if r.changed() || ui.data(|d| d.get_temp::<f64>(id)).is_some() {
+            ui.data_mut(|d| d.remove::<f64>(id));
+            rpt.overlay_zoom = crate::config::clamp_zoom((pct / 100.0) as f32);
+        }
     });
 }
 
