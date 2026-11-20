@@ -148,7 +148,7 @@ pub fn calc_prop_percentile(
     let roll = calc_flat(total, incr.value, get_prop_quality(item)) - flat.value;
     let [min, max] = bounds;
     let result = crate::js::math_round(((roll - min) / (max - min)) * 100.0);
-    result.max(0.0).min(100.0)
+    result.clamp(0.0, 100.0)
 }
 
 struct PropBase {

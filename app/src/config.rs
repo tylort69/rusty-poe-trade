@@ -61,6 +61,31 @@ pub struct RptSettings {
     pub scheme_variant: String,
     pub contrast: f64,
     pub check_for_updates: bool,
+    pub account: AccountSettings,
+}
+
+/// Path of Exile sign-in. Secrets are never stored here, only in the OS keychain.
+/// The account name lives in the existing APT `accountName` field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AccountSettings {
+    pub method: rpt_stash::AuthMethod,
+    /// Keep the session cookie in the keychain between restarts.
+    pub remember: bool,
+    /// GGG-issued OAuth client ID. Empty → OAuth sign-in disabled.
+    pub oauth_client_id: String,
+    pub oauth_port: u16,
+}
+
+impl Default for AccountSettings {
+    fn default() -> Self {
+        Self {
+            method: rpt_stash::AuthMethod::SessionCookie,
+            remember: true,
+            oauth_client_id: String::new(),
+            oauth_port: rpt_stash::oauth::DEFAULT_PORT,
+        }
+    }
 }
 
 impl Default for RptSettings {
@@ -71,6 +96,7 @@ impl Default for RptSettings {
             scheme_variant: "tonal-spot".into(),
             contrast: 0.0,
             check_for_updates: true,
+            account: AccountSettings::default(),
         }
     }
 }

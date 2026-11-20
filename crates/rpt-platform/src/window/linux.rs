@@ -233,14 +233,12 @@ impl Loop {
             .conn
             .get_property(false, self.root, self.atoms.net_client_list, AtomEnum::WINDOW, 0, u32::MAX)
             .map(|c| c.reply())
-        {
-            if let Some(v) = r.value32() {
+            && let Some(v) = r.value32() {
                 let list: Vec<Window> = v.collect();
                 if !list.is_empty() {
                     return list;
                 }
             }
-        }
         // No EWMH client list: walk two levels of the tree (frames + clients).
         let mut out = Vec::new();
         if let Ok(Ok(tree)) = self.conn.query_tree(self.root).map(|c| c.reply()) {

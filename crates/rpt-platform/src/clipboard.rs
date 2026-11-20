@@ -64,11 +64,10 @@ impl HostClipboard {
     }
 
     pub fn write(&mut self, text: &str) {
-        if let Some(c) = self.cb.as_mut() {
-            if let Err(e) = c.set_text(text.to_owned()) {
+        if let Some(c) = self.cb.as_mut()
+            && let Err(e) = c.set_text(text.to_owned()) {
                 tracing::warn!("clipboard write failed: {e}");
             }
-        }
     }
 
     /// First half of `readItemText`: clears the clipboard so a stale item is
@@ -127,14 +126,13 @@ impl HostClipboard {
     }
 
     pub fn on_timer(&mut self, now: Instant) {
-        if let Some((t, _)) = &self.restore_pending {
-            if *t <= now {
+        if let Some((t, _)) = &self.restore_pending
+            && *t <= now {
                 let (_, saved) = self.restore_pending.take().unwrap();
                 if self.should_restore {
                     self.write(&saved);
                 }
             }
-        }
     }
 }
 

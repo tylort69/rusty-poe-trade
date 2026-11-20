@@ -70,8 +70,8 @@ fn normalize_vk(vk: u32) -> (u16, Option<ModSide>) {
 }
 
 unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 {
-        if let Some(st) = STATE.get() {
+    if code >= 0
+        && let Some(st) = STATE.get() {
             let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
             let msg = wparam.0 as u32;
             let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
@@ -89,13 +89,12 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 (st.sink)(if down { InputEvent::KeyDown { key, mods } } else { InputEvent::KeyUp { key, mods } });
             }
         }
-    }
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 {
-        if let Some(st) = STATE.get() {
+    if code >= 0
+        && let Some(st) = STATE.get() {
             let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
             let (x, y) = (info.pt.x as f64, info.pt.y as f64);
             match wparam.0 as u32 {
@@ -120,6 +119,5 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
                 _ => {}
             }
         }
-    }
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }

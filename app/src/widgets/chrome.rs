@@ -136,7 +136,7 @@ pub fn anchored<R>(
                             }
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if opts.removable
-                                    && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.remove"))).double_clicked()
+                                    && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.delete"))).double_clicked()
                                 {
                                     remove = true;
                                 }

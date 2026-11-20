@@ -19,6 +19,7 @@ pub enum HostCommand {
     /// `OVERLAY->MAIN::track-area`
     TrackArea { hold_key: String, close_threshold: f32, from: egui::Pos2, area: egui::Rect, dpr: f32 },
     CheckForUpdate,
+    ToggleOverlay,
     Quit,
     OpenUrl(String),
     OpenConfigFolder,
@@ -36,6 +37,12 @@ pub enum HostEvent {
     HideExclusiveWidget,
     OverlayAttached,
     UpdateAvailable { version: String, url: String },
+    /// A message for the user (snackbar).
+    Notice(String),
+    /// Tray → Settings.
+    OpenSettings,
+    /// Tray → Quit.
+    Quit,
 }
 
 #[derive(Default)]

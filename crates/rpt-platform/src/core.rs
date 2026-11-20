@@ -112,6 +112,8 @@ impl Core {
     }
 
     pub fn run(mut self, rx: Receiver<Cmd>) {
+        // initial state so the UI does not have to assume it
+        self.sync_focus();
         loop {
             let deadline = [self.clip.restore_deadline(), self.vis_timer].into_iter().flatten().min();
             let msg = match deadline {
@@ -293,11 +295,10 @@ impl Core {
     fn assert_overlay_active(&mut self) {
         if !self.interactable {
             self.interactable = true;
-            if let Some(t) = &self.sys.tracker {
-                if !t.focus_overlay() {
+            if let Some(t) = &self.sys.tracker
+                && !t.focus_overlay() {
                     tracing::debug!("could not focus the overlay window");
                 }
-            }
             self.set_game_active(false);
             self.sync_focus();
         }
@@ -306,11 +307,10 @@ impl Core {
     fn assert_game_active(&mut self) {
         if self.interactable {
             self.interactable = false;
-            if let Some(t) = &self.sys.tracker {
-                if !t.focus_game() {
+            if let Some(t) = &self.sys.tracker
+                && !t.focus_game() {
                     tracing::debug!("could not focus the game window");
                 }
-            }
             self.set_game_active(true);
             self.sync_focus();
         }
@@ -472,12 +472,11 @@ impl Core {
                 self.area_mouse_move(x, y, mods.ctrl, mods.alt);
             }
             InputEvent::MouseDown { x, y } => {
-                if let Some(area) = &self.area {
-                    if area.area.contains_strict(x, y) {
+                if let Some(area) = &self.area
+                    && area.area.contains_strict(x, y) {
                         self.remove_area_listeners();
                         self.assert_overlay_active();
                     }
-                }
             }
             InputEvent::Wheel { rotation, x, y, mods } => {
                 let stash_scroll = self.config.as_ref().is_some_and(|c| c.stash_scroll);

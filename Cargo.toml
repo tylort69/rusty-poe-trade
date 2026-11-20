@@ -14,6 +14,7 @@ rust-version = "1.88"
 rpt-data = { path = "crates/rpt-data" }
 rpt-parser = { path = "crates/rpt-parser" }
 rpt-trade = { path = "crates/rpt-trade" }
+rpt-stash = { path = "crates/rpt-stash" }
 rpt-platform = { path = "crates/rpt-platform" }
 rpt-m3 = { path = "crates/rpt-m3" }
 

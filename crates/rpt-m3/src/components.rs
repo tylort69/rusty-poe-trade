@@ -765,12 +765,21 @@ pub fn top_app_bar(ui: &mut Ui, title: &str, actions: impl FnOnce(&mut Ui)) {
 
 /// A styled single-line text field with M3 "filled" look.
 pub fn text_field(ui: &mut Ui, value: &mut String, hint: &str) -> Response {
+    field(ui, value, hint, false)
+}
+
+/// Like [`text_field`] but masks the input (cookies, tokens).
+pub fn password_field(ui: &mut Ui, value: &mut String, hint: &str) -> Response {
+    field(ui, value, hint, true)
+}
+
+fn field(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> Response {
     let c = theme(ui.ctx()).colors;
     let resp = Frame::new()
         .fill(c.surface_container_highest)
         .corner_radius(CornerRadius { nw: shape::EXTRA_SMALL, ne: shape::EXTRA_SMALL, sw: 0, se: 0 })
         .inner_margin(Margin::symmetric(12, 8))
-        .show(ui, |ui| ui.add(egui::TextEdit::singleline(value).hint_text(hint).frame(egui::Frame::NONE).desired_width(f32::INFINITY)).on_hover_cursor(egui::CursorIcon::Text))
+        .show(ui, |ui| ui.add(egui::TextEdit::singleline(value).hint_text(hint).password(password).frame(egui::Frame::NONE).desired_width(f32::INFINITY)).on_hover_cursor(egui::CursorIcon::Text))
         .inner;
     let rect = resp.rect.expand2(vec2(12.0, 8.0));
     let focused = resp.has_focus();

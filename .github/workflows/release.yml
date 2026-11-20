@@ -1,0 +1,51 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p rusty-poe-trade
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" "/DAppVersion=$ver" packaging\windows\installer.iss
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path target\release\rusty-poe-trade.exe, LICENSE, LICENSE-UPSTREAM -DestinationPath "dist\RustyPoeTrade-$ver-windows-x64-portable.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxtst-dev \
+            libxkbcommon-x11-dev libgl1-mesa-dev libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
+      - run: cargo build --release --locked -p rusty-poe-trade
+      - name: Package tarball (for AUR -bin package)
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/rusty-poe-trade-$ver
+          cp target/release/rusty-poe-trade LICENSE LICENSE-UPSTREAM assets/icon.png packaging/linux/rusty-poe-trade.desktop dist/rusty-poe-trade-$ver/
+          tar -C dist -czf dist/rusty-poe-trade-$ver-linux-x86_64.tar.gz rusty-poe-trade-$ver
+          sha256sum dist/*.tar.gz > dist/SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS

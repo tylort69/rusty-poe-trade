@@ -43,6 +43,7 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, store: ConfigStore, cfg: Config, opts: LaunchOptions) -> Self {
         let ctx = &cc.egui_ctx;
+        egui_extras::install_image_loaders(ctx);
         rpt_m3::install_fonts(ctx, crate::fonts::system_fallbacks(&cfg.language));
         rpt_m3::install(ctx, rpt_m3::M3Theme::resolve(cfg.rpt.theme_settings(cfg.font_size)));
         let data = rpt_data::data();
@@ -50,7 +51,7 @@ impl App {
         let services = Services::new(&cfg, ctx.clone());
 
         let (tx, rx) = crossbeam_channel::unbounded();
-        let platform = crate::platform_glue::PlatformGlue::start(&cfg, tx, ctx.clone(), opts.windowed);
+        let platform = crate::platform_glue::PlatformGlue::start(&cfg, tx, ctx.clone(), store.dir());
 
         let st = OverlayState { active: opts.windowed, game_focused: false, hide_ui: false };
         Self {
@@ -79,6 +80,8 @@ impl App {
                 HostEvent::FocusChange { game, overlay, .. } => {
                     if !self.windowed {
                         self.st.active = *overlay;
+                        // upstream: the overlay window exists only over a focused game
+                        ctx.send_viewport_cmd(ViewportCommand::Visible(*game || *overlay));
                     }
                     self.st.game_focused = *game;
                     wm::on_focus_change(&mut self.cfg, self.st.active);
@@ -106,6 +109,16 @@ impl App {
                         self.logs.remove(0);
                     }
                 }
+                HostEvent::Notice(m) => self.snackbar.push(ctx, m.clone()),
+                HostEvent::OpenSettings => {
+                    if let Some(id) = wm::id_of(&self.cfg, "settings") {
+                        wm::show(&mut self.cfg, id);
+                    }
+                    if !self.windowed {
+                        self.host.push(HostCommand::ToggleOverlay);
+                    }
+                }
+                HostEvent::Quit => self.host.push(HostCommand::Quit),
                 HostEvent::UpdateAvailable { version, .. } => {
                     self.snackbar.push(ctx, format!("Rusty POE Trade {version} is available"));
                 }
@@ -129,7 +142,7 @@ impl App {
                 self.dirty_since.get_or_insert_with(Instant::now);
             }
         }
-        if let Some(r) = self.platform.game_rect() {
+        if let Some(r) = self.platform.game_rect(ctx.pixels_per_point()) {
             if self.game_rect != Some(r) && !self.windowed {
                 self.game_rect = Some(r);
                 ctx.send_viewport_cmd(ViewportCommand::OuterPosition(r.min));
@@ -259,8 +272,14 @@ impl eframe::App for App {
         if self.windowed { _visuals.panel_fill.to_normalized_gamma_f32() } else { [0.0; 4] }
     }
 
-    fn logic(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
+        self.platform.set_window(frame);
+        // Escape inside the active overlay returns to the game (upstream main process did this).
+        if self.st.active && !self.windowed && ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !ctx.egui_wants_keyboard_input() {
+            self.host.push(HostCommand::FocusGame);
+        }
         self.handle_events(ctx);
+        if self.services.sync_into(&mut self.cfg) { self.dirty_since.get_or_insert_with(Instant::now); }
         self.sync_theme(ctx);
         self.sync_passthrough(ctx);
         self.flush_host_commands(ctx);

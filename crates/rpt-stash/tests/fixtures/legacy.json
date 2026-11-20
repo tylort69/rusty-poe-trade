@@ -1,0 +1,3 @@
+{"numTabs":3,"tabs":[{"n":"$","i":0,"id":"a1","type":"CurrencyStash","colour":{"r":124,"g":84,"b":54}},{"n":"dump","i":1,"id":"b2","type":"QuadStash","hidden":false,"colour":{"r":0,"g":0,"b":255}},{"n":"maps","i":2,"id":"c3","type":"MapStash"}],
+"items":[{"verified":false,"w":1,"h":1,"icon":"x.png","stackSize":12,"maxStackSize":40,"league":"Standard","id":"i1","name":"","typeLine":"Chaos Orb","baseType":"Chaos Orb","identified":true,"ilvl":0,"frameType":5,"x":2,"y":0,"inventoryId":"Stash1"},
+{"w":2,"h":3,"icon":"y.png","id":"i2","name":"Tabula Rasa","typeLine":"Simple Robe","baseType":"Simple Robe","identified":true,"ilvl":70,"frameType":3,"note":"~price 10 chaos","x":0,"y":0,"sockets":[{"group":0,"attr":"G"}]}]}

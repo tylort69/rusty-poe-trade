@@ -7,11 +7,18 @@
 //!   lists, navigation rail, segmented buttons, progress, banners, snackbar, text field.
 
 pub mod components;
+pub mod controls;
+pub mod display;
 pub mod icons;
 pub mod scheme;
 pub mod system;
 pub mod theme;
 
 pub use components::*;
+pub use display::{
+    CustomColor, RangeEdge, custom_color, fmt_number, menu_frame, menu_item, optional_number_field, popover, range_slider, rich_tooltip, sparkline,
+    status_dot, tonal_badge,
+};
+pub use controls::{color_swatch, key_cap, number_field, setting_row, slider};
 pub use scheme::{Brightness, ColorScheme, DEFAULT_SEED, SchemeVariant, SeedSource, state_layer, with_alpha};
 pub use theme::{M3Theme, ThemeSettings, TypeRole, colors, install, install_fonts, shape, theme};

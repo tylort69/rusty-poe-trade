@@ -47,14 +47,33 @@ impl Realm {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// Upstream `showSeller: false | 'account' | 'ign'`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShowSeller {
     #[default]
-    #[serde(rename = "false")]
     No,
     Account,
     Ign,
+}
+
+impl Serialize for ShowSeller {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            ShowSeller::No => s.serialize_bool(false),
+            ShowSeller::Account => s.serialize_str("account"),
+            ShowSeller::Ign => s.serialize_str("ign"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ShowSeller {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)? {
+            serde_json::Value::String(s) if s == "account" => ShowSeller::Account,
+            serde_json::Value::String(s) if s == "ign" => ShowSeller::Ign,
+            _ => ShowSeller::No,
+        })
+    }
 }
 
 /// Upstream `PriceCheckWidget` options relevant to the core.
@@ -252,5 +271,6 @@ pub(crate) fn decode_trade_response<T: DeserializeOwned>(
     if !(200..300).contains(&status) {
         return Err(TradeError::Status { status, body: text.chars().take(300).collect() });
     }
-    Ok(serde_json::from_value(value)?)
+    // decode from text (not `value`) to keep object key order
+    Ok(serde_json::from_str(text)?)
 }

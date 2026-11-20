@@ -53,7 +53,12 @@ pub fn draw_widget(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime, wm_i
     match kind {
         "menu" => menu::show(ctx, w, &mut rt.menu, wm_id),
         "settings" => settings::show(ctx, w, &mut rt.settings, wm_id),
-        "item-search" => item_search::show(ctx, w, &mut rt.item_search, wm_id),
+        "item-search" => {
+            item_search::show(ctx, w, &mut rt.item_search, wm_id);
+            if let Some((item, pos)) = rt.item_search.take_price_check() {
+                price_check::open_item(w, &mut rt.price_check, item, pos);
+            }
+        }
         "timer" => timer::show(ctx, w, rt.timers.entry(wm_id).or_default(), wm_id),
         "stash-search" => stash_search::show(ctx, w, wm_id),
         "price-check" => price_check::show(ctx, w, &mut rt.price_check, wm_id),

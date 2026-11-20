@@ -14,6 +14,9 @@
 //! Everything here is UI-agnostic: filter state is plain serde structs the UI
 //! renders and mutates, network calls are `async fn`s on [`TradeClient`].
 
+// Upstream control flow is kept 1:1 for easier diffing against the TS source.
+#![allow(clippy::collapsible_if, clippy::if_same_then_else)]
+
 pub mod calc_q20;
 pub mod check;
 pub mod client;

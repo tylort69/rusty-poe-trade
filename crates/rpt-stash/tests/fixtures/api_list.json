@@ -1,0 +1,1 @@
+{"stashes":[{"id":"a1","name":"$","type":"CurrencyStash","index":0,"metadata":{"colour":"7c5436"}},{"id":"f1","name":"Folder","type":"Folder","index":1,"metadata":{"folder":true},"children":[{"id":"b2","parent":"f1","name":"dump","type":"QuadStash","metadata":{"colour":"0000ff"}}]}]}

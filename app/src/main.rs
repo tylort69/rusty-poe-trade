@@ -3,6 +3,7 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod account;
 mod app;
 mod config;
 mod fonts;

@@ -13,6 +13,11 @@ path = "src/main.rs"
 rpt-data.workspace = true
 rpt-parser.workspace = true
 rpt-m3.workspace = true
+rpt-trade.workspace = true
+regex.workspace = true
+rpt-platform.workspace = true
+rpt-stash.workspace = true
+raw-window-handle = "0.6"
 egui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -26,3 +31,7 @@ crossbeam-channel.workspace = true
 tokio.workspace = true
 directories.workspace = true
 parking_lot.workspace = true
+reqwest.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

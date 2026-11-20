@@ -23,6 +23,10 @@ impl I18n {
     }
 
     fn lookup<'a>(root: &'a Value, key: &str) -> Option<&'a str> {
+        // Some upstream keys are literal dotted strings at the top level (`"map.mods.heist"`).
+        if let Some(s) = root.get(key).and_then(Value::as_str) {
+            return Some(s);
+        }
         let mut cur = root;
         for part in key.split('.') {
             cur = cur.get(part)?;

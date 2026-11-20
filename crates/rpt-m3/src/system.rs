@@ -15,9 +15,21 @@ pub struct SystemTheme {
     pub prefers_dark: Option<bool>,
 }
 
+/// Detects the OS theme. Cached for 5 s so live re-theming (e.g. dragging a
+/// color picker) doesn't spawn `gsettings` / hit the registry every frame.
 pub fn detect() -> SystemTheme {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, SystemTheme)>> = Mutex::new(None);
+    let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, t)) = *c {
+        if at.elapsed() < Duration::from_secs(5) {
+            return t;
+        }
+    }
     let t = imp::detect();
     tracing::debug!(?t, "detected system theme");
+    *c = Some((Instant::now(), t));
     t
 }
 

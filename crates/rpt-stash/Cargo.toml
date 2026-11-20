@@ -1,0 +1,31 @@
+[package]
+name = "rpt-stash"
+description = "Path of Exile account + stash access with swappable auth (session cookie today, OAuth when available)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rpt-trade.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "macros", "rt"] }
+reqwest = { workspace = true, features = ["json", "gzip"] }
+base64 = "0.22"
+sha2 = "0.10"
+getrandom = "0.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", features = ["apple-native"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

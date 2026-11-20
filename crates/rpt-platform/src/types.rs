@@ -180,6 +180,7 @@ impl OverlayHandle {
         use raw_window_handle::RawWindowHandle as R;
         match raw {
             R::Win32(h) => OverlayHandle::Win32 { hwnd: h.hwnd.get() },
+            #[allow(clippy::unnecessary_cast)] // c_ulong is u64 on Linux, u32 on Windows
             R::Xlib(h) => OverlayHandle::X11 { window: h.window as u32 },
             R::Xcb(h) => OverlayHandle::X11 { window: h.window.get() },
             _ => OverlayHandle::Unsupported,
@@ -201,7 +202,8 @@ pub enum PlatformEvent {
     ToggleOverlay,
     /// `MAIN->OVERLAY::focus-change`. `overlay == true` means the overlay
     /// must accept input (disable click-through, show it); `false` means
-    /// passthrough. Emitted whenever `game` or `overlay` changes.
+    /// passthrough. Emitted once at start and whenever `game` or `overlay`
+    /// changes (upstream only emitted on game focus changes).
     FocusChange { game: bool, overlay: bool, using_hotkey: bool },
     /// Game window geometry/foreground state. `bounds` = client area in
     /// physical screen pixels; `None` = game window not found.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rusty POE Trade
+GenericName=Path of Exile trade overlay
+Comment=Price-check items and trade in Path of Exile
+Exec=rusty-poe-trade
+Icon=rusty-poe-trade
+Categories=Game;Utility;
+Keywords=poe;path of exile;trade;price;overlay;
+StartupWMClass=rusty-poe-trade
+Terminal=false

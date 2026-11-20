@@ -1,0 +1,47 @@
+# Maintainer: Rusty POE Trade contributors
+pkgname=rusty-poe-trade
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Path of Exile price-check & trade overlay — Rust rewrite of Awakened PoE Trade with a Material You UI"
+arch=('x86_64')
+url="https://github.com/OWNER/rusty-poe-trade"
+license=('MIT')
+# The overlay is an X11 window (the game runs under Proton/Wine via XWayland).
+depends=('gcc-libs' 'glibc' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libxtst' 'libxkbcommon-x11' 'libglvnd' 'gtk3' 'libxdo' 'dbus')
+makedepends=('cargo' 'git')
+optdepends=(
+  'gnome-keyring: remember your Path of Exile sign-in (or any Secret Service provider, e.g. KWallet)'
+  'noto-fonts-cjk: Korean / Traditional Chinese game clients'
+  'xdg-utils: open trade links in your browser'
+)
+source=("$pkgname::git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+options=('!lto')
+
+prepare() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p rusty-poe-trade
+}
+
+check() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --release --workspace --exclude rusty-poe-trade
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 target/release/rusty-poe-trade "$pkgdir/usr/bin/rusty-poe-trade"
+  install -Dm644 packaging/linux/rusty-poe-trade.desktop "$pkgdir/usr/share/applications/rusty-poe-trade.desktop"
+  install -Dm644 assets/icon.png "$pkgdir/usr/share/pixmaps/rusty-poe-trade.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 LICENSE-UPSTREAM "$pkgdir/usr/share/licenses/$pkgname/LICENSE-UPSTREAM"
+}

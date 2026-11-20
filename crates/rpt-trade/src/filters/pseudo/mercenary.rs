@@ -107,7 +107,7 @@ pub fn create_mercenary_filters(item: &ParsedItem) -> Vec<FilterOrGroup> {
 
         let mut supports = supports_filtered;
         // bitwise AND changes tier 4 to 0, so it goes at the very end
-        supports.sort_by(|a, b| (merc_tier(&b.stat) & 0x3).cmp(&(merc_tier(&a.stat) & 0x3)));
+        supports.sort_by_key(|a| std::cmp::Reverse(merc_tier(&a.stat) & 0x3));
 
         let possible_supports: Vec<Vec<Stat>> = skill
             .stat
