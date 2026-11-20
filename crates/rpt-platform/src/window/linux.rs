@@ -419,5 +419,37 @@ impl Loop {
             }
             Err(_) => self.detach(),
         }
+        self.sync_overlay();
+    }
+
+    /// Keep an unmanaged overlay exactly over the game. Window-manager-style
+    /// move/resize requests from the toolkit aren't reliable for
+    /// override-redirect windows, so configure it directly. One pixel short
+    /// of the game's height: Hyprland treats an unmanaged window covering a
+    /// whole monitor as a fullscreen client.
+    fn sync_overlay(&self) {
+        let (overlay, unmanaged) = {
+            let s = self.shared.lock();
+            (s.overlay, s.overlay_unmanaged)
+        };
+        let (Some(ov), true, Some(b)) = (overlay, unmanaged, self.bounds) else { return };
+        let want = (b.x, b.y, b.width.max(1) as u32, (b.height - 1).max(1) as u32);
+        let cur = (|| -> anyhow::Result<(i32, i32, u32, u32)> {
+            let g = self.conn.get_geometry(ov)?.reply()?;
+            let t = self.conn.translate_coordinates(ov, self.root, 0, 0)?.reply()?;
+            Ok((t.dst_x as i32, t.dst_y as i32, g.width as u32, g.height as u32))
+        })();
+        if cur.ok() == Some(want) {
+            return;
+        }
+        let aux = x11rb::protocol::xproto::ConfigureWindowAux::new().x(want.0).y(want.1).width(want.2).height(want.3).stack_mode(x11rb::protocol::xproto::StackMode::ABOVE);
+        match self.conn.configure_window(ov, &aux) {
+            Ok(c) => {
+                c.ignore_error();
+                let _ = self.conn.flush();
+                tracing::debug!("overlay moved over the game: {want:?} (was {cur:?})");
+            }
+            Err(e) => tracing::warn!("could not move the overlay over the game: {e}"),
+        }
     }
 }
