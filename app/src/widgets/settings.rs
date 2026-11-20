@@ -176,6 +176,9 @@ fn host_key(cfg: &Config) -> String {
 }
 
 fn close(w: &mut WCtx<'_>, st: &mut SettingsState, wm_id: u32, save: bool) {
+    if save {
+        account::submit_pending(w, &mut st.account);
+    }
     if !save {
         if let Some(snap) = st.snapshot.take() {
             *w.cfg = snap;

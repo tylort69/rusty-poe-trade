@@ -90,6 +90,7 @@ impl App {
         while let Ok(ev) = self.events.try_recv() {
             match &ev {
                 HostEvent::FocusChange { game, overlay, .. } => {
+                    tracing::info!("focus: game={game} overlay(interactive)={overlay}");
                     if !self.windowed {
                         self.st.active = *overlay;
                         // upstream: the overlay window exists only over a focused game

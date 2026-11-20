@@ -16,6 +16,21 @@ pub struct AccountPageState {
     sid_invalid: bool,
 }
 
+/// Settings' Save button: sign in with a cookie that was typed but not
+/// submitted with the page's own Sign in button.
+pub fn submit_pending(w: &mut WCtx<'_>, ps: &mut AccountPageState) {
+    if ps.sid_input.trim().is_empty() || w.cfg.rpt.account.method != AuthMethod::SessionCookie {
+        return;
+    }
+    match rpt_stash::auth::normalize_poesessid(&ps.sid_input) {
+        Some(sid) => {
+            account::get(w.services.ctx()).sign_in_session(sid, &w.cfg.rpt.account, &w.cfg.account_name);
+            ps.sid_input.clear();
+        }
+        None => tracing::warn!("Save pressed with a value that isn't a POESESSID; not signing in"),
+    }
+}
+
 pub fn page(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
     let th = theme(ui.ctx());
     let c = th.colors;
