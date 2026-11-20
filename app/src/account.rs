@@ -154,6 +154,7 @@ impl Account {
         let secret = Secret::new(poesessid);
         client.set_credentials(Some(Credentials::Session { poesessid: secret.clone(), account_name: account_name.to_owned() }));
         Self::set_status(&state, &ctx, Status::Working("Signing in…".into()));
+        tracing::info!("session-cookie sign-in requested (cookie length {})", secret.expose().len());
         self.rt.spawn(async move {
             if !Self::finish_verify(&client, &state, &ctx).await {
                 return;

@@ -45,6 +45,8 @@ pub struct Env<'a> {
     saved_searches: RefCell<Vec<(String, String)>>,
     /// Hideout tokens the user clicked "Travel" on this frame.
     travel: RefCell<Vec<String>>,
+    /// Travel / Whisper clicked while signed out: open Settings → Account.
+    open_account: std::cell::Cell<bool>,
     /// Result of the last Travel request: (message, is_error).
     pub travel_msg: Option<(String, bool)>,
 }
@@ -63,6 +65,9 @@ impl Env<'_> {
     /// Instant buyout: ask pathofexile.com to send the game to the seller's hideout.
     pub fn travel(&self, hideout_token: String) {
         self.travel.borrow_mut().push(hideout_token);
+    }
+    pub fn open_account(&self) {
+        self.open_account.set(true);
     }
     /// Save a trade search to the Market widget's "Saved searches".
     pub fn save_search(&self, url: String) {
@@ -239,6 +244,7 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
         item_name,
         saved_searches: RefCell::new(Vec::new()),
         travel: RefCell::new(Vec::new()),
+        open_account: std::cell::Cell::new(false),
         travel_msg: st.travel_msg.clone(),
     };
 
@@ -372,6 +378,12 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
 
     for cmd in env.commands.into_inner() {
         w.host.push(cmd);
+    }
+    if env.open_account.get() {
+        crate::widgets::settings::open_account(w.cfg);
+        if !w.st.active {
+            w.host.push(HostCommand::FocusOverlay);
+        }
     }
     for token in env.travel.into_inner() {
         let trade = w.services.trade.clone();

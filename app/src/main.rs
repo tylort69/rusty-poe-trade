@@ -24,6 +24,16 @@ fn main() -> eframe::Result {
         // SAFETY: single-threaded at this point in `main`.
         unsafe { std::env::remove_var("WAYLAND_DISPLAY") };
     }
+    // Without Xft.dpi in XSETTINGS, winit guesses a scale factor per monitor
+    // from its physical size, and the guess changes when the overlay moves
+    // between monitors. That made the overlay window much smaller than the
+    // game it must cover. Pin it: physical pixel = point; the overlay's own
+    // Zoom setting (Settings → Appearance) scales the UI instead.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WINIT_X11_SCALE_FACTOR").is_none() {
+        // SAFETY: single-threaded at this point in `main`.
+        unsafe { std::env::set_var("WINIT_X11_SCALE_FACTOR", "1") };
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,wgpu=warn".into()))

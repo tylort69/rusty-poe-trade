@@ -355,20 +355,24 @@ fn sale_cells(ui: &mut Ui, env: &Env<'_>, res: &rpt_trade::trade::search::Pricin
             (None, _) if !signed_in => sign_in.to_owned(),
             (None, _) => "pathofexile.com didn't send a hideout link for this listing.".to_owned(),
         };
-        let enabled = res.hideout_token.is_some() && !res.is_mine;
-        if ui.add(Button::tonal("Travel").icon(HOME).small().enabled(enabled)).on_hover_text(tip).on_disabled_hover_text(if signed_in { "No hideout link for this listing." } else { sign_in }).clicked() {
-            if let Some(t) = &res.hideout_token {
-                env.travel(t.clone());
+        let enabled = !res.is_mine && (res.hideout_token.is_some() || !signed_in);
+        let label = if signed_in { "Travel" } else { "Sign in" };
+        if ui.add(Button::tonal(label).icon(HOME).small().enabled(enabled)).on_hover_text(tip).on_disabled_hover_text("No hideout link for this listing.").clicked() {
+            match &res.hideout_token {
+                Some(t) => env.travel(t.clone()),
+                None => env.open_account(),
             }
         }
     } else {
         rpt_m3::tonal_badge(ui, "In person", c.surface_container_highest, c.on_surface_variant)
             .on_hover_text("Whisper the seller and trade in person.");
-        let enabled = res.whisper.is_some() && !res.is_mine;
+        let enabled = !res.is_mine && (res.whisper.is_some() || !signed_in);
         let tip = res.whisper.clone().unwrap_or_else(|| if signed_in { "The seller's character name is unknown for this listing.".into() } else { sign_in.into() });
-        if ui.add(Button::tonal("Whisper").icon(icons::CHAT).small().enabled(enabled)).on_hover_text(&tip).on_disabled_hover_text(tip.clone()).clicked() {
-            if let Some(w) = &res.whisper {
-                env.whisper(w.clone());
+        let label = if signed_in || res.whisper.is_some() { "Whisper" } else { "Sign in" };
+        if ui.add(Button::tonal(label).icon(icons::CHAT).small().enabled(enabled)).on_hover_text(&tip).on_disabled_hover_text(tip.clone()).clicked() {
+            match &res.whisper {
+                Some(w) => env.whisper(w.clone()),
+                None => env.open_account(),
             }
         }
     }
