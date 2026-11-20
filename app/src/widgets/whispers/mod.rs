@@ -104,6 +104,8 @@ pub struct WhispersState {
     popout_spawn: Option<(Option<[f32; 2]>, [f32; 2])>,
     /// Window moved/resized at this time; read its Hyprland position once it settles.
     popout_moved: Option<std::time::Instant>,
+    /// Hotkey field capturing a key in the settings popover.
+    pub cap: super::settings::hotkey::Capture,
 }
 
 /// Hyprland manages the pop-out's position (see `popout_hypr_pos`).
@@ -531,7 +533,11 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max
                 }
             }
             let gear = ui.add(IconButton::new(icons::SETTINGS).size(32.0).tooltip("Whisper settings"));
-            rpt_m3::popover(&gear, |ui| settings_popover(ui, w));
+            rpt_m3::popover(&gear, |ui| {
+                // scroll when the window is shorter than the menu (popped-out window)
+                let max_h = (ui.ctx().content_rect().height() - 24.0).max(200.0);
+                egui::ScrollArea::vertical().id_salt("whisper-settings").max_height(max_h).show(ui, |ui| settings_popover(ui, w, &mut st.cap));
+            });
             let any_done = st.book.list.iter().any(|x| x.completed);
             if ui.add(IconButton::new(ICON_DONE_ALL).size(32.0).enabled(any_done).tooltip("Dismiss completed")).clicked() {
                 st.book.dismiss_completed();
@@ -564,6 +570,7 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max
 /// Buttons along the top that act on the most relevant player.
 fn quick_bar(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState) {
     let th = theme(ui.ctx());
+    let c = th.colors;
     let cfg = own(w.cfg);
     let mut clicked = None;
     ui.add_space(4.0);
@@ -571,6 +578,7 @@ fn quick_bar(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState) {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         for qa in QuickAction::ALL {
             let target = qa.target(&st.book).map(|x| x.player.clone());
+            let key = cfg.quick_keys.get(qa.key()).filter(|k| !k.is_empty()).cloned();
             let label = match &target {
                 Some(p) => format!("{} {p}", qa.label()),
                 None => qa.label().to_owned(),
@@ -579,23 +587,31 @@ fn quick_bar(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState) {
             if target.is_none() {
                 tip.push_str("\n(nobody right now)");
             }
-            if let Some(k) = cfg.quick_keys.get(qa.key()).filter(|k| !k.is_empty()) {
-                tip.push_str(&format!("\nHotkey: {k}"));
+            match &key {
+                Some(k) => tip.push_str(&format!("\nHotkey: {k}")),
+                None => tip.push_str("\nNo hotkey: set one under ⚙ → Hotkeys"),
             }
-            let b = rpt_m3::Button::tonal(label).icon(qa.icon()).small().enabled(target.is_some());
-            if ui.add(b).on_hover_text(tip).on_disabled_hover_text(qa.describe()).clicked() {
-                clicked = Some(qa);
-            }
+            // button and its hotkey stay together when the row wraps
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                let b = rpt_m3::Button::tonal(label).icon(qa.icon()).small().enabled(target.is_some());
+                if ui.add(b).on_hover_text(&tip).on_disabled_hover_text(&tip).clicked() {
+                    clicked = Some(qa);
+                }
+                if let Some(k) = &key {
+                    rpt_m3::key_cap(ui, k).on_hover_text(format!("Hotkey for {}", qa.label()));
+                }
+            });
         }
     });
-    let _ = th;
+    let _ = c;
     ui.add_space(2.0);
     if let Some(qa) = clicked {
         quick(w, st, qa);
     }
 }
 
-fn settings_popover(ui: &mut Ui, w: &mut WCtx<'_>) {
+fn settings_popover(ui: &mut Ui, w: &mut WCtx<'_>, cap: &mut super::settings::hotkey::Capture) {
     let th = theme(ui.ctx());
     ui.set_width(300.0);
     let Some(cfg) = own_mut(w.cfg) else { return };
@@ -618,6 +634,43 @@ fn settings_popover(ui: &mut Ui, w: &mut WCtx<'_>) {
     ui.add_space(4.0);
     changed |= rpt_m3::switch_row(ui, "Kick buyer after trade", &mut cfg.auto_kick).changed();
     changed |= rpt_m3::switch_row(ui, "Show new whispers in game", &mut cfg.notify_in_game).changed();
+
+    // Hotkeys for the quick-action buttons (they work in game, overlay closed).
+    ui.add_space(8.0);
+    ui.separator();
+    label(ui, "Hotkeys");
+    ui.label(
+        RichText::new("Click a field, then press the keys. Backspace clears, Esc cancels. They work in game without opening the overlay.")
+            .font(th.font(TypeRole::BodySmall))
+            .color(th.colors.on_surface_variant),
+    );
+    let mut keys_changed = false;
+    for qa in QuickAction::ALL {
+        let mut key = cfg.quick_keys.get(qa.key()).cloned();
+        ui.horizontal(|ui| {
+            ui.label(rpt_m3::icon_text(qa.icon(), 18.0).color(th.colors.on_surface_variant)).on_hover_text(qa.describe());
+            ui.allocate_ui_with_layout(vec2(100.0, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(100.0);
+                ui.label(qa.label()).on_hover_text(qa.describe());
+            });
+            if super::settings::hotkey::hotkey_input(ui, cap, w.i18n, ("whisper-quick", qa.key()), &mut key, false, false, 160.0) {
+                match key.filter(|k| !k.is_empty()) {
+                    Some(k) => {
+                        cfg.quick_keys.insert(qa.key().to_owned(), k);
+                    }
+                    None => {
+                        cfg.quick_keys.remove(qa.key());
+                    }
+                }
+                keys_changed = true;
+            }
+        });
+    }
+    if keys_changed {
+        // register the new global hotkeys right away
+        w.host.push(HostCommand::PushHostConfig);
+        changed = true;
+    }
     if changed {
         w.save_requested = true;
     }

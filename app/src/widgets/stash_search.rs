@@ -26,20 +26,21 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, wm_id: u32) {
         ui.horizontal(|ui| {
             let title = if widget.wm_title.is_empty() { "Untitled" } else { widget.wm_title.as_str() };
             ui.add(egui::Label::new(RichText::new(title).font(th.font(TypeRole::TitleSmall)).color(c.on_surface)).truncate());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if active && ui.add(IconButton::new(icons::SETTINGS).size(32.0).tooltip(i18n.t("settings.title"))).clicked() {
-                    open_settings = true;
-                }
-                if ss.entries.iter().any(|e| e.hotkey.is_some()) {
-                    ui.scope(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if rpt_m3::switch(ui, &mut ss.enable_hotkeys).changed() {
-                            keys_changed = true;
-                        }
-                        ui.label(RichText::new(i18n.t("stash_search.enable_keys")).font(th.font(TypeRole::LabelMedium)).color(c.on_surface_variant));
-                    });
-                }
-            });
+            // left to right: a right-to-left layout fills the available width
+            // and stretched the window to the screen edge
+            if ss.entries.iter().any(|e| e.hotkey.is_some()) {
+                ui.add_space(8.0);
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new(i18n.t("stash_search.enable_keys")).font(th.font(TypeRole::LabelMedium)).color(c.on_surface_variant));
+                    if rpt_m3::switch(ui, &mut ss.enable_hotkeys).changed() {
+                        keys_changed = true;
+                    }
+                });
+            }
+            if active && ui.add(IconButton::new(icons::SETTINGS).size(32.0).tooltip(i18n.t("settings.title"))).clicked() {
+                open_settings = true;
+            }
         });
         ui.add_space(4.0);
 

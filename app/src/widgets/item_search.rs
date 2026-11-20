@@ -125,6 +125,8 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut ItemSearchState, wm_id: u3
     let mut clear = false;
     let r = chrome::anchored(ctx, w, wm_id, chrome::ChromeOpts { removable: false, hideable: true, surface: true }, |ui, w| {
         ui.set_min_width(384.0);
+        // centered rows fill the available width; cap it so the window doesn't stretch
+        ui.set_max_width(400.0);
         if !st.selected.is_empty() {
             egui::Frame::new().fill(c.surface_container_high).corner_radius(egui::CornerRadius::same(rpt_m3::shape::MEDIUM)).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -158,7 +160,8 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut ItemSearchState, wm_id: u3
         }
         egui::Frame::new().fill(c.surface_container_high).corner_radius(egui::CornerRadius::same(rpt_m3::shape::MEDIUM)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.horizontal(|ui| {
-                let w_field = ui.available_width() - 130.0;
+                // fixed width: filling the available width stretched the window to the screen edge
+                let w_field = 384.0 - 130.0;
                 ui.scope(|ui| {
                     ui.set_width(w_field);
                     rpt_m3::text_field(ui, &mut st.search, &w.i18n.t("item_search.input"));

@@ -160,29 +160,32 @@ pub fn anchored<R>(
                                 c.on_surface_variant,
                             );
                             drags.push(grip);
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if opts.removable
-                                    && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.delete"))).double_clicked()
-                                {
-                                    remove = true;
-                                }
-                                if opts.hideable && ui.add(IconButton::new(icons::VISIBILITY_OFF).size(28.0).tooltip(w.i18n.t("widget.hide"))).clicked() {
-                                    hide = true;
-                                }
-                                // as wide as the widget was last frame, never wider (that would grow it)
-                                let want = last_w - 16.0 - 24.0 - ui.min_rect().width() - 2.0 * ui.spacing().item_spacing.x;
-                                let (strip, resp) = ui.allocate_exact_size(Vec2::new(want.clamp(24.0, ui.available_width().max(24.0)), 24.0), Sense::drag());
-                                if resp.hovered() || resp.dragged() {
-                                    ui.painter().text(
-                                        strip.left_center(),
-                                        Align2::LEFT_CENTER,
-                                        "drag to move",
-                                        egui::FontId::proportional(11.0),
-                                        c.on_surface_variant,
-                                    );
-                                }
-                                drags.push(resp);
-                            });
+                            // Left to right on purpose: a right-to-left layout fills the
+                            // whole available width, which stretched every widget to its
+                            // maximum size so it hugged the screen edge and couldn't move.
+                            let n_buttons = opts.removable as usize + opts.hideable as usize;
+                            let sp = ui.spacing().item_spacing.x;
+                            let fixed = 16.0 + 24.0 + n_buttons as f32 * (28.0 + sp) + sp;
+                            let want = (last_w - fixed).max(24.0);
+                            let (strip, resp) = ui.allocate_exact_size(Vec2::new(want, 24.0), Sense::drag());
+                            if resp.hovered() || resp.dragged() {
+                                ui.painter().text(
+                                    strip.left_center(),
+                                    Align2::LEFT_CENTER,
+                                    "drag to move",
+                                    egui::FontId::proportional(11.0),
+                                    c.on_surface_variant,
+                                );
+                            }
+                            drags.push(resp);
+                            if opts.hideable && ui.add(IconButton::new(icons::VISIBILITY_OFF).size(28.0).tooltip(w.i18n.t("widget.hide"))).clicked() {
+                                hide = true;
+                            }
+                            if opts.removable
+                                && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.delete"))).double_clicked()
+                            {
+                                remove = true;
+                            }
                         });
                         for drag in drags {
                             let drag = drag.on_hover_cursor(egui::CursorIcon::Grab);
@@ -317,5 +320,99 @@ mod tests {
         let p = anchor_pos(&a, area);
         assert!((p.x - 3000.0).abs() < 0.01 && p.y == 0.0);
         assert!((max_size(&a, area).x - 2560.0).abs() < 0.01);
+    }
+}
+
+#[cfg(test)]
+mod drag_tests {
+    use super::*;
+    use crate::host::HostQueue;
+
+    /// Press on a widget's top strip, move, release: the anchor follows.
+    #[test]
+    fn dragging_the_strip_moves_the_widget() {
+        rpt_data::init("en").unwrap();
+        let ctx = Context::default();
+        rpt_m3::install_fonts(&ctx, vec![]);
+        rpt_m3::install(&ctx, rpt_m3::M3Theme::resolve(rpt_m3::ThemeSettings::default()));
+        let data = rpt_data::data();
+        let i18n = crate::i18n::I18n::new(&data);
+        let mut cfg = crate::config::Config::default();
+        let services = crate::services::Services::new(&cfg, ctx.clone());
+        let mut host = HostQueue::default();
+        let id = crate::wm::id_of(&cfg, "rpt-wealth").unwrap();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        let before = cfg.widgets.iter().find(|x| x.wm_id == id).unwrap().kind.clone().anchor_mut().cloned().unwrap();
+        let rect = std::cell::Cell::new(Rect::NOTHING);
+        let mut frame = |cfg: &mut crate::config::Config, events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let mut w = super::WCtx { cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                let r = anchored(ui.ctx(), &mut w, id, ChromeOpts::default(), |ui, _| { ui.label("body"); ui.add_space(200.0); });
+                rect.set(r.rect);
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut cfg, vec![]);
+        frame(&mut cfg, vec![]);
+        // middle of the top strip, left of the hide/remove buttons
+        let rect = rect.get();
+        assert!(rect.width() < 600.0, "widget sized to its content, not the screen: {rect:?}");
+        let p0 = Pos2::new(rect.left() + 60.0, rect.top() + 20.0);
+        eprintln!("widget rect {rect:?}, press at {p0:?}");
+        let btn = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut cfg, vec![egui::Event::PointerMoved(p0)]);
+        frame(&mut cfg, vec![btn(p0, true)]);
+        for i in 1..=10 {
+            frame(&mut cfg, vec![egui::Event::PointerMoved(p0 + Vec2::new(-20.0 * i as f32, 10.0 * i as f32))]);
+        }
+        let p1 = p0 + Vec2::new(-200.0, 100.0);
+        frame(&mut cfg, vec![btn(p1, false)]);
+        let after = cfg.widgets.iter().find(|x| x.wm_id == id).unwrap().kind.clone().anchor_mut().cloned().unwrap();
+        eprintln!("anchor before {before:?} after {after:?}");
+        assert!((after.x - before.x + 200.0 / 1280.0 * 100.0).abs() < 1.0, "x moved by the drag");
+        assert!((after.y - before.y - 100.0 / 800.0 * 100.0).abs() < 1.0, "y moved by the drag");
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+    use crate::host::HostQueue;
+
+    /// No tool window should stretch to the whole overlay (it would hug the
+    /// screen edge and look impossible to move).
+    #[test]
+    fn tool_windows_are_not_full_width() {
+        rpt_data::init("en").unwrap();
+        let ctx = Context::default();
+        rpt_m3::install_fonts(&ctx, vec![]);
+        rpt_m3::install(&ctx, rpt_m3::M3Theme::resolve(rpt_m3::ThemeSettings::default()));
+        let data = rpt_data::data();
+        let i18n = crate::i18n::I18n::new(&data);
+        let mut cfg = crate::config::Config::default();
+        let services = crate::services::Services::new(&cfg, ctx.clone());
+        let mut host = HostQueue::default();
+        let mut rt = crate::widgets::Runtime::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(2560.0, 1440.0));
+        let tools = ["menu", "rpt-wealth", "rpt-whispers", "rpt-mapping", "rpt-market", "rpt-pob", "item-search", "stash-search", "timer"];
+        let mut bad = Vec::new();
+        for t in tools {
+            let Some(id) = crate::wm::id_of(&cfg, t) else { continue };
+            for _ in 0..3 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let mut w = super::WCtx { cfg: &mut cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                    crate::widgets::draw_widget(ui.ctx(), &mut w, &mut rt, id);
+                });
+                out.textures_delta.clear();
+            }
+            let w: f32 = ctx.data(|d| d.get_temp(Id::unique(("rpt-widget", id)).with("last-width"))).unwrap_or(0.0);
+            eprintln!("{t}: width {w}");
+            if w > 1200.0 {
+                bad.push((t, w));
+            }
+        }
+        assert!(bad.is_empty(), "full-width tool windows: {bad:?}");
     }
 }
