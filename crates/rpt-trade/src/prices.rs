@@ -235,6 +235,62 @@ impl PriceIndex {
     pub fn chaos_to_stable(&self, count: f64) -> f64 {
         chaos_to_stable(self.xchg_rate(), count)
     }
+
+    /// When the index was last (re)loaded; changes whenever the data does.
+    pub fn last_update(&self) -> Option<Instant> {
+        self.state.read().last_update
+    }
+
+    /// Overview types present in the loaded index as `(type, url slug)`, e.g.
+    /// `("Currency", "currency")`, in load order without duplicates.
+    pub fn overview_types(&self) -> Vec<(&'static str, &'static str)> {
+        let s = self.state.read();
+        let mut out: Vec<(&'static str, &'static str)> = Vec::new();
+        for e in &s.db {
+            let Some((_, _, t)) = NAMESPACE_MAP.iter().find(|(_, u, _)| *u == e.url) else { continue };
+            if !out.iter().any(|(x, _)| x == t) {
+                out.push((t, e.url));
+            }
+        }
+        out
+    }
+
+    /// All lines of one overview type (for browsing). Parses on every call, so cache it.
+    pub fn overview(&self, type_: &str) -> Option<NinjaOverview> {
+        let (_, url, t) = NAMESPACE_MAP.iter().find(|(_, _, t)| *t == type_)?;
+        let s = self.state.read();
+        let entry = s.db.iter().find(|e| e.url == *url)?;
+        Some(parse_overview_chunk(&entry.lines, t, url))
+    }
+}
+
+/// One poe.ninja overview of the dense blob (see [`PriceIndex::overview`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NinjaOverview {
+    pub type_: &'static str,
+    pub url: &'static str,
+    /// `"cx"` (currency exchange, has per-item history) or `"s"` (stash).
+    pub source: Option<String>,
+    pub lines: Vec<NinjaDenseInfo>,
+}
+
+/// Parse a `{"type":..,"lines":[..],..}` chunk; trailing data after the object is ignored.
+pub fn parse_overview_chunk(chunk: &str, type_: &'static str, url: &'static str) -> NinjaOverview {
+    #[derive(Deserialize)]
+    struct Raw {
+        #[serde(default)]
+        lines: Vec<serde_json::Value>,
+        #[serde(default)]
+        source: Option<String>,
+    }
+    let raw = serde_json::Deserializer::from_str(chunk).into_iter::<Raw>().next().and_then(|r| r.ok());
+    let Some(raw) = raw else { return NinjaOverview { type_, url, ..Default::default() } };
+    NinjaOverview {
+        type_,
+        url,
+        source: raw.source,
+        lines: raw.lines.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+    }
 }
 
 pub fn chaos_to_stable(xchg_rate: Option<f64>, count: f64) -> f64 {
@@ -442,6 +498,18 @@ mod tests {
         assert!(idx.find_price_by_query(&DbQuery { ns: "UNIQUE".into(), name: "Divine Orb".into(), variant: None }).is_none());
         let k = idx.find_price_by_query(&DbQuery { ns: "UNIQUE".into(), name: "Kaom's Heart".into(), variant: None }).unwrap();
         assert_eq!(k.chaos, 50.0);
+    }
+
+    #[test]
+    fn overviews() {
+        let idx = index();
+        assert_eq!(idx.overview_types(), vec![("Currency", "currency"), ("UniqueArmour", "unique-armours")]);
+        let o = idx.overview("UniqueArmour").unwrap();
+        assert_eq!(o.lines.len(), 2);
+        assert_eq!(o.lines[0].variant.as_deref(), Some("Armour/ES/Life"));
+        assert_eq!(idx.overview("Currency").unwrap().lines.len(), 2);
+        assert!(idx.overview("Oil").is_none());
+        assert!(idx.last_update().is_some());
     }
 
     #[test]
