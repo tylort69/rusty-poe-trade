@@ -163,7 +163,13 @@ impl App {
         if self.windowed {
             return;
         }
-        let Some(px) = self.platform.game_rect_px() else { return };
+        let Some(mut px) = self.platform.game_rect_px() else { return };
+        // An unmanaged X11 window exactly the size of a monitor is taken for a
+        // fullscreen client by Hyprland, which then hides the (fullscreen) game
+        // behind it. One pixel short avoids that.
+        if !wm_focus_allowed() && px.height > 1 {
+            px.height -= 1;
+        }
         let ppp = coords::target_ppp(ctx, self.cfg.rpt.zoom());
         let key = (px, ppp.to_bits());
         if self.game_sync != Some(key) {

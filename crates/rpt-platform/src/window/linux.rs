@@ -101,6 +101,9 @@ impl Tracker {
             OverlayHandle::X11 { window } => Some(window),
             _ => None,
         };
+        if win.is_some() {
+            hyprland_overlay_rule();
+        }
         let unmanaged = match win {
             Some(w) if std::env::var_os("RPT_MANAGED_OVERLAY").is_none() => match self.make_unmanaged(w) {
                 Ok(()) => true,
@@ -190,6 +193,45 @@ impl Tracker {
                 false
             }
         }
+    }
+}
+
+/// The overlay's X11 class / Wayland app id (`ViewportBuilder::with_app_id`).
+const OVERLAY_CLASS: &str = "rusty-poe-trade";
+
+/// On Hyprland, add a runtime-only window rule for the overlay's own class so
+/// the compositor doesn't blur (or shadow / dim / animate) everything behind
+/// the transparent full-game overlay. Nothing is written to the user's config;
+/// the rule disappears on `hyprctl reload`. `RPT_NO_HYPR_RULES=1` skips it.
+fn hyprland_overlay_rule() {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() || std::env::var_os("RPT_NO_HYPR_RULES").is_some() {
+        return;
+    }
+    let run = |args: &[&str]| -> bool {
+        match std::process::Command::new("hyprctl").args(args).output() {
+            Ok(o) => {
+                let out = String::from_utf8_lossy(&o.stdout);
+                o.status.success() && out.trim() == "ok"
+            }
+            Err(_) => false,
+        }
+    };
+    // Hyprland 0.5x+ (Lua config)
+    let lua = format!(
+        "hl.window_rule({{ name = \"rusty-poe-trade-overlay\", match = {{ class = \"^({OVERLAY_CLASS})$\" }}, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})"
+    );
+    if run(&["eval", &lua]) {
+        tracing::info!("Hyprland: added runtime window rule for the overlay (no blur/shadow/dim/anim)");
+        return;
+    }
+    // Older Hyprland (hyprlang config)
+    let ok = ["noblur", "noshadow", "nodim", "noanim", "noborder"]
+        .iter()
+        .all(|r| run(&["keyword", "windowrulev2", &format!("{r}, class:^({OVERLAY_CLASS})$")]));
+    if ok {
+        tracing::info!("Hyprland: added runtime windowrulev2 rules for the overlay");
+    } else {
+        tracing::warn!("Hyprland: could not add the overlay window rule; the game may look blurred behind the overlay");
     }
 }
 
