@@ -225,6 +225,78 @@ pub fn hyprland_overlay_rule() {
     ONCE.call_once(hyprland_overlay_rule_inner);
 }
 
+/// Where popped-out windows open, in Hyprland layout coordinates. XWayland's
+/// X11 coordinates don't match the layout on every setup, so positions are
+/// saved from and restored through Hyprland itself.
+static POPOUT_POS: std::sync::Mutex<Option<(i32, i32)>> = std::sync::Mutex::new(None);
+
+fn hyprland() -> bool {
+    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() && std::env::var_os("RPT_NO_HYPR_RULES").is_none()
+}
+
+fn hyprctl_ok(args: &[&str]) -> bool {
+    match std::process::Command::new("hyprctl").args(args).output() {
+        Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "ok",
+        Err(_) => false,
+    }
+}
+
+/// The monitor containing a layout point and the point relative to it.
+/// Hyprland's `move` rule is relative to the monitor the window opens on.
+fn monitor_local(x: i32, y: i32) -> Option<(String, i32, i32)> {
+    let out = std::process::Command::new("hyprctl").args(["monitors", "-j"]).output().ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    v.as_array()?.iter().find_map(|m| {
+        let (mx, my) = (m["x"].as_i64()? as i32, m["y"].as_i64()? as i32);
+        let scale = m["scale"].as_f64().unwrap_or(1.0).max(0.1);
+        let (mw, mh) = ((m["width"].as_f64()? / scale) as i32, (m["height"].as_f64()? / scale) as i32);
+        (x >= mx && x < mx + mw && y >= my && y < my + mh).then(|| Some((m["name"].as_str()?.to_owned(), x - mx, y - my)))?
+    })
+}
+
+fn popout_rule_lua() -> String {
+    let pos = *POPOUT_POS.lock().unwrap_or_else(|e| e.into_inner());
+    let mv = pos
+        .and_then(|(x, y)| monitor_local(x, y))
+        .map(|(mon, lx, ly)| format!(", monitor = \"{mon}\", move = \"{lx} {ly}\""))
+        .unwrap_or_default();
+    format!(
+        "hl.window_rule({{ name = \"rusty-poe-trade-popout\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({POPOUT_TITLES})$\" }}, float = true, no_focus = false{mv} }})"
+    )
+}
+
+/// Set where popped-out windows open next time (Hyprland layout pixels) and
+/// update the runtime rule. No-op outside Hyprland.
+pub fn set_popout_position(pos: Option<(i32, i32)>) {
+    let changed = {
+        let mut p = POPOUT_POS.lock().unwrap_or_else(|e| e.into_inner());
+        let changed = *p != pos;
+        *p = pos;
+        changed
+    };
+    if changed && hyprland() && RULES_ADDED.load(std::sync::atomic::Ordering::Relaxed) {
+        hyprctl_ok(&["eval", &popout_rule_lua()]);
+    }
+}
+
+/// Position of our window with this exact title, in Hyprland layout pixels.
+pub fn hyprland_window_pos(title: &str) -> Option<(i32, i32)> {
+    if !hyprland() {
+        return None;
+    }
+    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let pid = std::process::id() as i64;
+    v.as_array()?.iter().find_map(|c| {
+        (c["title"] == title && c["pid"].as_i64() == Some(pid)).then(|| {
+            let at = c["at"].as_array()?;
+            Some((at.first()?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
+        })?
+    })
+}
+
+static RULES_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn hyprland_overlay_rule_inner() {
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() || std::env::var_os("RPT_NO_HYPR_RULES").is_some() {
         return;
@@ -244,13 +316,12 @@ fn hyprland_overlay_rule_inner() {
         "hl.window_rule({{ name = \"rusty-poe-trade-overlay\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({OVERLAY_TITLE})$\" }}, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})"
     );
     // Popped-out tool windows (e.g. "Trade whispers") share the class but
-    // must float so they can be dragged to any monitor instead of tiling.
-    let popout_lua = format!(
-        "hl.window_rule({{ name = \"rusty-poe-trade-popout\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({POPOUT_TITLES})$\" }}, float = true, no_focus = false }})"
-    );
+    // must float (and take input) so they can be dragged to any monitor.
+    let popout_lua = popout_rule_lua();
     if run(&["eval", &lua]) {
         tracing::info!("Hyprland: added runtime window rule for the overlay (no focus/blur/shadow/dim/anim)");
         if run(&["eval", &popout_lua]) {
+            RULES_ADDED.store(true, std::sync::atomic::Ordering::Relaxed);
             tracing::info!("Hyprland: added runtime window rule to float popped-out windows");
         } else {
             tracing::warn!("Hyprland: could not add the float rule for popped-out windows");

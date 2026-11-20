@@ -11,7 +11,7 @@ use crate::types::{OverlayHandle, Rect};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::hyprland_overlay_rule;
+pub use linux::{hyprland_overlay_rule, hyprland_window_pos, set_popout_position};
 #[cfg(target_os = "linux")]
 use linux as imp;
 #[cfg(windows)]

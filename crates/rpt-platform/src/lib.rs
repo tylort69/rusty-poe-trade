@@ -73,7 +73,7 @@ use parking_lot::Mutex;
 
 pub use emit::WakeFn;
 #[cfg(target_os = "linux")]
-pub use window::hyprland_overlay_rule as prepare_window_rules;
+pub use window::{hyprland_overlay_rule as prepare_window_rules, hyprland_window_pos, set_popout_position};
 pub use types::{
     AreaRect, HostConfig, NoDownloadReason, OverlayHandle, PlatformEvent, Rect, ShortcutAction,
     ShortcutBinding, TrackArea, UpdateInfo,

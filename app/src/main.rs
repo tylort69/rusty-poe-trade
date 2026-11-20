@@ -40,14 +40,19 @@ fn main() -> eframe::Result {
         .init();
 
     let windowed = std::env::args().any(|a| a == "--windowed");
+    let store = store::ConfigStore::new();
+    let cfg = store.load();
     // Window-manager rules must exist before our windows map (e.g. the
     // popped-out whispers window is created on the first frame).
     #[cfg(target_os = "linux")]
     if !windowed {
+        let hypr_pos = cfg.widgets.iter().find_map(|w| match &w.kind {
+            config::WidgetKind::Whispers(x) => x.popout_hypr_pos,
+            _ => None,
+        });
+        rpt_platform::set_popout_position(hypr_pos.map(|[x, y]| (x, y)));
         rpt_platform::prepare_window_rules();
     }
-    let store = store::ConfigStore::new();
-    let cfg = store.load();
     if let Err(e) = rpt_data::init(&cfg.language) {
         tracing::error!("failed to load game data for {}: {e}; falling back to en", cfg.language);
         rpt_data::init("en").expect("embedded en data");

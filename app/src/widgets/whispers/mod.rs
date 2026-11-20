@@ -64,6 +64,9 @@ pub struct WhispersWidget {
     /// Last position / size of the popped-out window (screen pixels).
     pub popout_pos: Option<[f32; 2]>,
     pub popout_size: Option<[f32; 2]>,
+    /// Same, as Hyprland reports it (layout pixels). Preferred on Hyprland,
+    /// where XWayland's X11 coordinates don't match the monitor layout.
+    pub popout_hypr_pos: Option<[i32; 2]>,
     /// Keep the popped-out window above other windows.
     pub popout_on_top: bool,
     /// Global hotkeys for the quick actions, by [`QuickAction::key`].
@@ -84,6 +87,7 @@ impl Default for WhispersWidget {
             pop_out: false,
             popout_pos: None,
             popout_size: None,
+            popout_hypr_pos: None,
             popout_on_top: true,
             quick_keys: Default::default(),
         }
@@ -98,6 +102,13 @@ pub struct WhispersState {
     /// Where the popped-out window was created this time (kept constant so
     /// egui doesn't fight the user while they drag it).
     popout_spawn: Option<(Option<[f32; 2]>, [f32; 2])>,
+    /// Window moved/resized at this time; read its Hyprland position once it settles.
+    popout_moved: Option<std::time::Instant>,
+}
+
+/// Hyprland manages the pop-out's position (see `popout_hypr_pos`).
+fn hypr_positions() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() && std::env::var_os("RPT_NO_HYPR_RULES").is_none()
 }
 
 /// The quick-action bar at the top, each with an optional global hotkey.
@@ -358,7 +369,12 @@ pub fn show_popout(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState
         st.popout_spawn = None;
         return;
     }
-    let spawn = *st.popout_spawn.get_or_insert((cfg.popout_pos, cfg.popout_size.unwrap_or([400.0, 640.0])));
+    let first = st.popout_spawn.is_none();
+    let pos = if hypr_positions() { None } else { cfg.popout_pos };
+    let spawn = *st.popout_spawn.get_or_insert((pos, cfg.popout_size.unwrap_or([400.0, 640.0])));
+    if first {
+        st.popout_moved = Some(std::time::Instant::now());
+    }
     let mut vb = egui::ViewportBuilder::default()
         .with_title(POPOUT_TITLE)
         .with_app_id("rusty-poe-trade")
@@ -398,7 +414,27 @@ pub fn show_popout(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState
                     x.popout_pos = Some(pos);
                     x.popout_size = Some(size);
                     w.save_requested = true;
+                    st.popout_moved = Some(std::time::Instant::now());
                 }
+            }
+        }
+        // On Hyprland, remember the position Hyprland reports once the move settles.
+        #[cfg(target_os = "linux")]
+        if let Some(t) = st.popout_moved {
+            if t.elapsed() >= Duration::from_millis(600) {
+                st.popout_moved = None;
+                if let Some((px, py)) = rpt_platform::hyprland_window_pos(POPOUT_TITLE) {
+                    if let Some(x) = own_mut(w.cfg) {
+                        if x.popout_hypr_pos != Some([px, py]) {
+                            tracing::debug!("whispers pop-out at {px},{py} (Hyprland layout)");
+                            x.popout_hypr_pos = Some([px, py]);
+                            w.save_requested = true;
+                        }
+                    }
+                    rpt_platform::set_popout_position(Some((px, py)));
+                }
+            } else {
+                vctx.request_repaint_after(Duration::from_millis(650));
             }
         }
         let c = theme(&vctx).colors;
