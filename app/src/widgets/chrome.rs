@@ -204,7 +204,10 @@ pub fn anchored<R>(
                             }
                         }
                     }
-                    body(ui, w)
+                    // The body gets its own child Ui starting below the strip:
+                    // `set_height`/`set_max_height` on the parent Ui reset its cursor
+                    // to the top, which drew bodies (Wealth, PoB) over the strip.
+                    ui.scope(|ui| body(ui, w)).inner
                 })
                 .inner
         });
@@ -414,5 +417,47 @@ mod width_tests {
             }
         }
         assert!(bad.is_empty(), "full-width tool windows: {bad:?}");
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::host::HostQueue;
+
+    /// The body starts below the drag strip, not on top of it.
+    #[test]
+    fn body_starts_below_the_strip() {
+        rpt_data::init("en").unwrap();
+        let ctx = Context::default();
+        rpt_m3::install_fonts(&ctx, vec![]);
+        rpt_m3::install(&ctx, rpt_m3::M3Theme::resolve(rpt_m3::ThemeSettings::default()));
+        let data = rpt_data::data();
+        let i18n = crate::i18n::I18n::new(&data);
+        let mut cfg = crate::config::Config::default();
+        let services = crate::services::Services::new(&cfg, ctx.clone());
+        let mut host = HostQueue::default();
+        let id = crate::wm::id_of(&cfg, "rpt-wealth").unwrap();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        let mut body_top = 0.0;
+        let mut strip_bottom = 0.0;
+        for i in 0..4 {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                let mut w = super::WCtx { cfg: &mut cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                anchored(ui.ctx(), &mut w, id, ChromeOpts::default(), |ui, _| {
+                    ui.set_width(980.0);
+                    ui.set_max_height(720.0);
+                    let before = ui.min_rect();
+                    rpt_m3::top_app_bar(ui, "Wealth", |_| {});
+                    let r = ui.label("body");
+                    body_top = r.rect.top();
+                    strip_bottom = before.bottom();
+                    eprintln!("pass {i}: min_rect before body {before:?}, cursor {:?}, body label {:?}", ui.cursor(), r.rect);
+                });
+            });
+            out.textures_delta.clear();
+        }
+        assert!(body_top >= strip_bottom, "body at {body_top}, strip ends at {strip_bottom}");
     }
 }

@@ -181,3 +181,139 @@ pub fn display_title(i18n: &I18n, kind: &WidgetKind, title: &str) -> String {
     };
     i18n.t(key)
 }
+
+#[cfg(test)]
+mod overlap_tests {
+    use super::*;
+    use crate::host::HostQueue;
+
+    /// Text drawn inside a rect (to name widgets in the report).
+    fn texts_in(shapes: &[egui::epaint::ClippedShape], r: egui::Rect) -> String {
+        let mut out = Vec::new();
+        fn walk(s: &egui::Shape, r: egui::Rect, out: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let tr = egui::Rect::from_min_size(t.pos, t.galley.size());
+                    if r.expand(1.0).intersects(tr) {
+                        let txt = t.galley.text().chars().filter(|c| !('\u{e000}'..='\u{f8ff}').contains(c)).collect::<String>();
+                        if !txt.trim().is_empty() {
+                            out.push(txt.trim().chars().take(30).collect());
+                        }
+                    }
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, r, out)),
+                _ => {}
+            }
+        }
+        for c in shapes {
+            walk(&c.shape, r, &mut out);
+        }
+        out.dedup();
+        out.join(" | ")
+    }
+
+    /// Interactive widgets (or labels) that partly cover each other in one window.
+    fn overlaps(ctx: &egui::Context) -> Vec<(egui::Rect, egui::Rect, String)> {
+        let mut out = Vec::new();
+        ctx.viewport(|vp| {
+            for (layer, rects) in vp.prev_pass.widgets.layers() {
+                // skip containers (scroll areas, panels): only widget-sized rects
+                let rs: Vec<_> = rects.iter().filter(|r| r.interact_rect.is_positive() && r.interact_rect.area() > 4.0 && r.interact_rect.height() < 120.0).collect();
+                for (i, a) in rs.iter().enumerate() {
+                    for b in &rs[i + 1..] {
+                        // visible (clipped) parts: rows scrolled out of view don't count
+                        let (ra, rb) = (a.interact_rect, b.interact_rect);
+                        let inter = ra.intersect(rb);
+                        if !inter.is_positive() {
+                            continue;
+                        }
+                        // nesting (a scroll area and its contents, a card and its button) is fine
+                        if ra.expand(0.5).contains_rect(rb) || rb.expand(0.5).contains_rect(ra) {
+                            continue;
+                        }
+                        let small = ra.area().min(rb.area());
+                        if inter.area() / small > 0.15 && inter.width() > 3.0 && inter.height() > 3.0 {
+                            let kind = |s: egui::Sense| if s.senses_click() { "click" } else if s.senses_drag() { "drag" } else { "hover" };
+                            out.push((ra, rb, format!("{:?} {}↔{}", layer.order, kind(a.sense), kind(b.sense))));
+                        }
+                    }
+                }
+            }
+        });
+        out
+    }
+
+    /// Render every tool window and report widgets drawn on top of each other.
+    #[test]
+    fn no_overlapping_widgets_in_tool_windows() {
+        rpt_data::init("en").unwrap();
+        let ctx = egui::Context::default();
+        rpt_m3::install_fonts(&ctx, vec![]);
+        rpt_m3::install(&ctx, rpt_m3::M3Theme::resolve(rpt_m3::ThemeSettings::default()));
+        let data = rpt_data::data();
+        let i18n = crate::i18n::I18n::new(&data);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(2560.0, 1440.0));
+        use settings::Page;
+        const HELMET: &str = "Item Class: Helmets\nRarity: Rare\nDoom Visor\nHubris Circlet\n--------\nEnergy Shield: 220 (augmented)\n--------\nRequirements:\nLevel: 69\nInt: 154\n--------\nSockets: B-B-B B\n--------\nItem Level: 84\n--------\n{ Prefix Modifier \"Rotund\" (Tier: 3) — Life }\n+71(70-79) to maximum Life\n{ Suffix Modifier \"of the Furnace\" (Tier: 3) — Elemental, Fire, Resistance }\n+42(42-45)% to Fire Resistance\n";
+        // (wmType, settings page) — every tool, every settings page, and a price check
+        let mut cases: Vec<(&str, Option<Page>)> =
+            ["menu", "rpt-wealth", "rpt-whispers", "rpt-mapping", "rpt-market", "rpt-pob", "item-search", "stash-search", "timer", "price-check"].iter().map(|t| (*t, None)).collect();
+        for p in [
+            Page::Tools, Page::Hotkeys, Page::Chat, Page::General, Page::Appearance, Page::Widgets, Page::PriceCheck, Page::Maps,
+            Page::ItemCheck, Page::ItemSearch, Page::Debug, Page::About, Page::Account, Page::Stopwatch,
+        ] {
+            cases.push(("settings", Some(p)));
+        }
+        let mut report = Vec::new();
+        for (t, page) in cases {
+            let mut cfg = crate::config::Config::default();
+            let services = crate::services::Services::new(&cfg, ctx.clone());
+            let mut host = HostQueue::default();
+            let mut rt = Runtime::default();
+            let Some(id) = crate::wm::id_of(&cfg, t) else { continue };
+            crate::wm::show(&mut cfg, id);
+            if let Some(p) = page {
+                rt.settings.page = p;
+            }
+            let t = match page {
+                Some(p) => format!("settings/{p:?}"),
+                None => t.to_owned(),
+            };
+            let t = t.as_str();
+            if t == "price-check" {
+                let item = price_check::parse_item(HELMET).expect("helmet parses");
+                let mut w = WCtx { cfg: &mut cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                price_check::open_item(&mut w, &mut rt.price_check, item, egui::pos2(2200.0, 900.0));
+            }
+            let mut shapes = Vec::new();
+            for _ in 0..4 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let mut w = WCtx { cfg: &mut cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                    draw_widget(ui.ctx(), &mut w, &mut rt, id);
+                });
+                out.textures_delta.clear();
+                shapes = out.shapes;
+            }
+            if std::env::var("RPT_DUMP").ok().as_deref() == Some(t) {
+                ctx.viewport(|vp| {
+                    for (layer, rects) in vp.prev_pass.widgets.layers() {
+                        for r in rects {
+                            eprintln!("DUMP {:?} {:?} {:?} [{}]", layer.order, r.sense, r.rect, texts_in(&shapes, r.rect));
+                        }
+                    }
+                });
+            }
+            let n = ctx.viewport(|vp| vp.prev_pass.widgets.layers().map(|(_, r)| r.len()).sum::<usize>());
+            eprintln!("case {t}: {n} widgets");
+            assert!(n > 5, "{t} drew nothing");
+            for (a, b, k) in overlaps(&ctx) {
+                report.push(format!("{t}: {k} [{}] × [{}]  {a:?} × {b:?}", texts_in(&shapes, a), texts_in(&shapes, b)));
+            }
+        }
+        for r in &report {
+            eprintln!("{r}");
+        }
+        assert!(report.is_empty(), "{} overlapping widget pairs", report.len());
+    }
+}

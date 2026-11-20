@@ -110,7 +110,7 @@ fn menu_by_type(t: Option<&str>) -> Vec<Vec<Page>> {
 }
 
 pub struct SettingsState {
-    page: Page,
+    pub(crate) page: Page,
     /// Per-widget mode (upstream `selectedWmId`).
     target: Option<u32>,
     snapshot: Option<Config>,
