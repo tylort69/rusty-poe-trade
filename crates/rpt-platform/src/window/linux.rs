@@ -80,7 +80,7 @@ impl Tracker {
         let shared = Arc::new(Mutex::new(Shared { title, title_changed: true, target: None, overlay: None, overlay_unmanaged: false }));
         let sh = shared.clone();
         std::thread::Builder::new().name("rpt-window-tracker".into()).spawn(move || {
-            let mut t = Loop { conn, root, atoms, shared: sh, sink, target: None, fg: false, bounds: None };
+            let mut t = Loop { conn, root, atoms, shared: sh, sink, target: None, fg: false, bounds: None, watched_overlay: None };
             if let Err(e) = t.run() {
                 tracing::error!("X11 window tracker stopped: {e}");
             }
@@ -257,6 +257,8 @@ struct Loop {
     target: Option<Window>,
     fg: bool,
     bounds: Option<Rect>,
+    /// Overlay window we receive structure events for (on this connection).
+    watched_overlay: Option<Window>,
 }
 
 impl Loop {
@@ -313,6 +315,11 @@ impl Loop {
             }
             Event::ConfigureNotify(e) if Some(e.window) == self.target => self.update_bounds(),
             Event::MapNotify(e) if Some(e.window) == self.target => self.update_bounds(),
+            // Something (the toolkit re-applying a stale position when the
+            // overlay is shown) moved the overlay: put it back over the game
+            // immediately instead of at the next periodic check.
+            Event::ConfigureNotify(e) if Some(e.window) == self.watched_overlay => self.sync_overlay(),
+            Event::MapNotify(e) if Some(e.window) == self.watched_overlay => self.sync_overlay(),
             Event::DestroyNotify(e) if Some(e.window) == self.target => self.detach(),
             _ => {}
         }
@@ -446,12 +453,19 @@ impl Loop {
     /// override-redirect windows, so configure it directly. One pixel short
     /// of the game's height: Hyprland treats an unmanaged window covering a
     /// whole monitor as a fullscreen client.
-    fn sync_overlay(&self) {
+    fn sync_overlay(&mut self) {
         let (overlay, unmanaged) = {
             let s = self.shared.lock();
             (s.overlay, s.overlay_unmanaged)
         };
         let (Some(ov), true, Some(b)) = (overlay, unmanaged, self.bounds) else { return };
+        if self.watched_overlay != Some(ov) {
+            let mask = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
+            if let Ok(c) = self.conn.change_window_attributes(ov, &mask) {
+                c.ignore_error();
+                self.watched_overlay = Some(ov);
+            }
+        }
         let want = (b.x, b.y, b.width.max(1) as u32, (b.height - 1).max(1) as u32);
         let cur = (|| -> anyhow::Result<(i32, i32, u32, u32)> {
             let g = self.conn.get_geometry(ov)?.reply()?;
