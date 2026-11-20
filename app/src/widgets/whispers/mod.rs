@@ -36,6 +36,12 @@ const ICON_QUESTION: &str = "\u{eb8b}";
 const ICON_UNREAD: &str = "\u{f189}"; // mark_chat_unread
 const ICON_DONE_ALL: &str = "\u{e877}";
 const ICON_GROUP_REMOVE: &str = "\u{e7ad}";
+const ICON_DOCK: &str = "\u{f1cf}"; // close_fullscreen
+const ICON_PUSH_PIN: &str = "\u{f10d}";
+
+/// Title of the popped-out window. The platform's Hyprland rule floats
+/// windows with exactly this title, so keep them in sync.
+pub const POPOUT_TITLE: &str = "Trade whispers";
 
 /// Persisted settings for this widget (stored in config.json, `wmType: "rpt-whispers"`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -53,6 +59,15 @@ pub struct WhispersWidget {
     pub auto_kick: bool,
     /// Show the "N new trade whispers" pill while playing.
     pub notify_in_game: bool,
+    /// Shown in its own window (any monitor) instead of inside the overlay.
+    pub pop_out: bool,
+    /// Last position / size of the popped-out window (screen pixels).
+    pub popout_pos: Option<[f32; 2]>,
+    pub popout_size: Option<[f32; 2]>,
+    /// Keep the popped-out window above other windows.
+    pub popout_on_top: bool,
+    /// Global hotkeys for the quick actions, by [`QuickAction::key`].
+    pub quick_keys: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for WhispersWidget {
@@ -66,6 +81,11 @@ impl Default for WhispersWidget {
             still_interested_text: "still interested in {item} for {price}?".into(),
             auto_kick: false,
             notify_in_game: true,
+            pop_out: false,
+            popout_pos: None,
+            popout_size: None,
+            popout_on_top: true,
+            quick_keys: Default::default(),
         }
     }
 }
@@ -75,6 +95,90 @@ impl Default for WhispersWidget {
 pub struct WhispersState {
     pub book: WhisperBook,
     got_lines: bool,
+    /// Where the popped-out window was created this time (kept constant so
+    /// egui doesn't fight the user while they drag it).
+    popout_spawn: Option<(Option<[f32; 2]>, [f32; 2])>,
+}
+
+/// The quick-action bar at the top, each with an optional global hotkey.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuickAction {
+    Invite,
+    Trade,
+    Thanks,
+    Kick,
+}
+
+impl QuickAction {
+    pub const ALL: [QuickAction; 4] = [Self::Invite, Self::Trade, Self::Thanks, Self::Kick];
+
+    /// Config / hotkey event key.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Invite => "invite",
+            Self::Trade => "trade",
+            Self::Thanks => "thanks",
+            Self::Kick => "kick",
+        }
+    }
+
+    pub fn from_key(k: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.key() == k)
+    }
+
+    /// What it does, for buttons and the hotkey settings.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Invite => "Invite the newest buyer who whispered you",
+            Self::Trade => "Trade with the buyer in your hideout",
+            Self::Thanks => "Thank the player you last traded with",
+            Self::Kick => "Kick the player you last traded with from your party",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Invite => "Invite",
+            Self::Trade => "Trade",
+            Self::Thanks => "Thanks",
+            Self::Kick => "Kick",
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Self::Invite => ICON_PERSON_ADD,
+            Self::Trade => icons::SWAP_HORIZ,
+            Self::Thanks => ICON_THUMB_UP,
+            Self::Kick => ICON_PERSON_REMOVE,
+        }
+    }
+
+    fn action(self) -> Action {
+        match self {
+            Self::Invite => Action::Invite,
+            Self::Trade => Action::Trade,
+            Self::Thanks => Action::Thanks,
+            Self::Kick => Action::Kick,
+        }
+    }
+
+    /// The card this would act on right now.
+    pub fn target(self, book: &WhisperBook) -> Option<&Whisper> {
+        match self {
+            Self::Invite => book.invite_target(),
+            Self::Trade => book.trade_target(),
+            Self::Thanks | Self::Kick => book.party_target(),
+        }
+    }
+}
+
+/// Run a quick action (button or hotkey). Does nothing without a target.
+pub fn quick(w: &mut WCtx<'_>, st: &mut WhispersState, qa: QuickAction) {
+    match qa.target(&st.book).map(|x| x.id) {
+        Some(id) => run_action(w, st, id, qa.action()),
+        None => tracing::info!("whispers: no player for quick action {:?}", qa),
+    }
 }
 
 /// One-click actions on a card.
@@ -122,7 +226,7 @@ pub fn command_for(a: Action, w: &Whisper, cfg: &WhispersWidget) -> Option<Strin
     }
 }
 
-fn own(cfg: &crate::config::Config) -> WhispersWidget {
+pub fn own(cfg: &crate::config::Config) -> WhispersWidget {
     cfg.widgets
         .iter()
         .find_map(|w| match &w.kind {
@@ -198,6 +302,10 @@ pub fn on_game_log(w: &mut WCtx<'_>, st: &mut WhispersState, lines: &[String]) {
 
 pub fn show(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState, wm_id: u32) {
     let cfg = own(w.cfg);
+    if cfg.pop_out {
+        // drawn in its own window by `show_popout`
+        return;
+    }
     let active = w.st.active;
     if active {
         // The user is looking at the list now.
@@ -213,7 +321,8 @@ pub fn show(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState, wm_id
     let now = now_secs();
     let r = chrome::anchored(ctx, w, wm_id, chrome::ChromeOpts { removable: false, hideable: true, surface: true }, |ui, w| {
         if active {
-            full(ui, w, st, now);
+            let max_h = (w.screen.height() * 0.6).max(200.0);
+            full(ui, w, st, now, max_h, false);
         } else {
             pill(ui, st);
         }
@@ -241,11 +350,83 @@ fn pill(ui: &mut Ui, st: &WhispersState) {
     }
 }
 
-fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs) {
+/// Draw the popped-out whispers window (own OS window, any monitor). Call
+/// every frame; does nothing unless the widget is popped out.
+pub fn show_popout(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState) {
+    let cfg = own(w.cfg);
+    if !cfg.pop_out {
+        st.popout_spawn = None;
+        return;
+    }
+    let spawn = *st.popout_spawn.get_or_insert((cfg.popout_pos, cfg.popout_size.unwrap_or([400.0, 640.0])));
+    let mut vb = egui::ViewportBuilder::default()
+        .with_title(POPOUT_TITLE)
+        .with_app_id("rusty-poe-trade")
+        .with_decorations(false)
+        .with_inner_size(spawn.1)
+        .with_min_inner_size([320.0, 220.0])
+        .with_taskbar(true);
+    if let Some(p) = spawn.0 {
+        vb = vb.with_position(p);
+    }
+    if cfg.popout_on_top {
+        vb = vb.with_always_on_top();
+    }
+    let now = now_secs();
+    let mut dock = false;
+    ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("rpt-whispers-popout"), vb, |ui, _class| {
+        let vctx = ui.ctx().clone();
+        let (close, outer, inner, hovered) = vctx.input(|i| {
+            let v = i.viewport();
+            (v.close_requested(), v.outer_rect, v.inner_rect, i.pointer.has_pointer())
+        });
+        if close {
+            dock = true;
+        }
+        if hovered {
+            st.book.mark_all_seen();
+        }
+        // remember where the user put it
+        if let (Some(o), Some(inn)) = (outer, inner) {
+            let pos = [o.min.x, o.min.y];
+            let size = [inn.width(), inn.height()];
+            if let Some(x) = own_mut(w.cfg) {
+                if x.popout_pos != Some(pos) || x.popout_size != Some(size) {
+                    x.popout_pos = Some(pos);
+                    x.popout_size = Some(size);
+                    w.save_requested = true;
+                }
+            }
+        }
+        let c = theme(&vctx).colors;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(c.surface_container).inner_margin(egui::Margin::same(10)))
+            .show(ui, |ui| {
+                let h = ui.available_height();
+                if full(ui, w, st, now, h, true) {
+                    dock = true;
+                }
+            });
+    });
+    if dock {
+        if let Some(x) = own_mut(w.cfg) {
+            x.pop_out = false;
+            w.save_requested = true;
+        }
+    }
+    ctx.request_repaint_after(Duration::from_secs(15));
+}
+
+/// The full whispers list. `popped` = drawn in its own window. Returns true
+/// when the user asked to dock a popped-out window back into the overlay.
+fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max_h: f32, popped: bool) -> bool {
     let th = theme(ui.ctx());
     let c = th.colors;
-    ui.set_width(380.0);
-    ui.horizontal(|ui| {
+    let mut dock = false;
+    if !popped {
+        ui.set_width(380.0);
+    }
+    let header = ui.horizontal(|ui| {
         ui.label(rpt_m3::icon_text(icons::FORUM, 20.0).color(c.primary));
         ui.label(RichText::new("Trade whispers").font(th.font(TypeRole::TitleMedium)).color(c.on_surface));
         let incoming = st.book.list.iter().filter(|x| x.dir == Dir::Incoming && !x.completed).count();
@@ -253,6 +434,28 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs) {
             rpt_m3::tonal_badge(ui, &incoming.to_string(), c.primary_container, c.on_primary_container);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if popped {
+                if ui.add(IconButton::new(ICON_DOCK).size(32.0).tooltip("Put back into the game overlay")).clicked() {
+                    dock = true;
+                }
+                if let Some(x) = own_mut(w.cfg) {
+                    let tip = if x.popout_on_top { "Stays above other windows (click to stop)" } else { "Keep above other windows" };
+                    if ui.add(IconButton::new(ICON_PUSH_PIN).size(32.0).selected(x.popout_on_top).tooltip(tip)).clicked() {
+                        x.popout_on_top = !x.popout_on_top;
+                        w.save_requested = true;
+                        let level = if x.popout_on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+                    }
+                }
+            } else if ui.add(IconButton::new(icons::OPEN_IN_NEW).size(32.0).tooltip("Pop out into its own window you can drag to any monitor")).clicked() {
+                if let Some(x) = own_mut(w.cfg) {
+                    x.pop_out = true;
+                    w.save_requested = true;
+                }
+                if w.st.active {
+                    w.host.push(HostCommand::FocusGame);
+                }
+            }
             let gear = ui.add(IconButton::new(icons::SETTINGS).size(32.0).tooltip("Whisper settings"));
             rpt_m3::popover(&gear, |ui| settings_popover(ui, w));
             let any_done = st.book.list.iter().any(|x| x.completed);
@@ -261,17 +464,25 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs) {
             }
         });
     });
+    if popped {
+        // drag the window by its header (empty space between title and buttons)
+        let drag = ui.interact(header.response.rect, ui.scope_id().with("popout-drag"), egui::Sense::drag());
+        if drag.on_hover_cursor(egui::CursorIcon::Grab).drag_started() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+    }
     super::mapping::client_log_hint(ui, w, st.got_lines);
+    quick_bar(ui, w, st);
 
     if st.book.list.is_empty() {
         ui.add_space(8.0);
         ui.label(RichText::new("No trade whispers yet.").font(th.font(TypeRole::BodyMedium)).color(c.on_surface_variant));
-        return;
+        return dock;
     }
     let cfg = own(w.cfg);
-    let max_h = (w.screen.height() * 0.6).max(200.0);
+    let max_h = (max_h - (ui.min_rect().height())).max(120.0);
     let mut actions: Vec<(u64, Action)> = Vec::new();
-    egui::ScrollArea::vertical().id_salt("whisper-cards").max_height(max_h).show(ui, |ui| {
+    egui::ScrollArea::vertical().id_salt("whisper-cards").max_height(max_h).auto_shrink([false, !popped]).show(ui, |ui| {
         for card in &st.book.list {
             ui.add_space(4.0);
             whisper_card(ui, card, &cfg, now, &mut actions);
@@ -279,6 +490,41 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs) {
     });
     for (id, a) in actions {
         run_action(w, st, id, a);
+    }
+    dock
+}
+
+/// Buttons along the top that act on the most relevant player.
+fn quick_bar(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState) {
+    let th = theme(ui.ctx());
+    let cfg = own(w.cfg);
+    let mut clicked = None;
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for qa in QuickAction::ALL {
+            let target = qa.target(&st.book).map(|x| x.player.clone());
+            let label = match &target {
+                Some(p) => format!("{} {p}", qa.label()),
+                None => qa.label().to_owned(),
+            };
+            let mut tip = qa.describe().to_owned();
+            if target.is_none() {
+                tip.push_str("\n(nobody right now)");
+            }
+            if let Some(k) = cfg.quick_keys.get(qa.key()).filter(|k| !k.is_empty()) {
+                tip.push_str(&format!("\nHotkey: {k}"));
+            }
+            let b = rpt_m3::Button::tonal(label).icon(qa.icon()).small().enabled(target.is_some());
+            if ui.add(b).on_hover_text(tip).on_disabled_hover_text(qa.describe()).clicked() {
+                clicked = Some(qa);
+            }
+        }
+    });
+    let _ = th;
+    ui.add_space(2.0);
+    if let Some(qa) = clicked {
+        quick(w, st, qa);
     }
 }
 
@@ -474,6 +720,31 @@ mod tests {
         cfg.character_name = "Me".into();
         assert_eq!(command_for(Action::LeaveParty, &w, &cfg).unwrap(), "/kick Me");
         assert_eq!(command_for(Action::Dismiss, &w, &cfg), None);
+    }
+
+    #[test]
+    fn quick_action_targets_and_hotkeys() {
+        rpt_data::init("en").unwrap();
+        let mut b = WhisperBook::default();
+        let buy = |who: &str, item: &str| format!(r#"@From {who}: Hi, I would like to buy your {item} listed for 10 chaos in Settlers (stash tab "T"; position: left 1, top 1)"#);
+        b.feed(&l("12:00:00", &buy("Old", "Tabula Rasa")), "en");
+        b.feed(&l("12:00:10", &buy("New", "Goldrim")), "en");
+        assert_eq!(QuickAction::Invite.target(&b).unwrap().player, "New");
+        assert!(QuickAction::Trade.target(&b).is_none(), "nobody in the hideout yet");
+        b.feed(&l("12:00:20", ": Old has joined the area."), "en");
+        assert_eq!(QuickAction::Trade.target(&b).unwrap().player, "Old");
+        b.feed(&l("12:00:30", ": Trade accepted."), "en");
+        assert_eq!(QuickAction::Thanks.target(&b).unwrap().player, "Old");
+        assert_eq!(QuickAction::Kick.target(&b).unwrap().player, "Old");
+        assert_eq!(QuickAction::Invite.target(&b).unwrap().player, "New");
+
+        let mut cfg = crate::config::Config::default();
+        own_mut(&mut cfg).unwrap().quick_keys.insert("invite".into(), "Alt + I".into());
+        let sc = cfg.shortcuts();
+        let s = sc.iter().find(|x| x.shortcut == "Alt + I").expect("hotkey registered");
+        assert!(matches!(&s.action, crate::config::ShortcutKind::TriggerEvent { target } if target == "whisper-quick:invite"));
+        assert!(!s.keep_mod_keys);
+        assert_eq!(QuickAction::from_key("kick"), Some(QuickAction::Kick));
     }
 
     /// on_game_log → flags/host commands, then headless renders (active and in-game pill).

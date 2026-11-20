@@ -11,6 +11,8 @@ use crate::types::{OverlayHandle, Rect};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+pub use linux::hyprland_overlay_rule;
+#[cfg(target_os = "linux")]
 use linux as imp;
 #[cfg(windows)]
 mod windows;

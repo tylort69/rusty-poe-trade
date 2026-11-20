@@ -129,6 +129,8 @@ pub fn anchored<R>(
     let mut hide = false;
     let mut remove = false;
 
+    let width_id = id.with("last-width");
+    let last_w: f32 = ctx.data(|d| d.get_temp(width_id)).unwrap_or(0.0);
     let resp = Area::new(id)
         .order(if z > 0 { Order::Middle } else { Order::Background })
         .pivot(pivot(&anchor.pos))
@@ -145,9 +147,11 @@ pub fn anchored<R>(
             frame
                 .show(ui, |ui| {
                     if active {
-                        // Drag handle + actions row (upstream move handle & action strip).
+                        // Drag strip + actions row (upstream move handle & action strip).
+                        // The whole strip moves the widget, not just the grip icon.
+                        let mut drags: Vec<egui::Response> = Vec::new();
                         ui.horizontal(|ui| {
-                            let (r, drag) = ui.allocate_exact_size(Vec2::new(24.0, 24.0), Sense::drag());
+                            let (r, grip) = ui.allocate_exact_size(Vec2::new(24.0, 24.0), Sense::drag());
                             ui.painter().text(
                                 r.center(),
                                 Align2::CENTER_CENTER,
@@ -155,6 +159,32 @@ pub fn anchored<R>(
                                 egui::FontId::new(18.0, egui::FontFamily::Name(rpt_m3::theme::ICONS.into())),
                                 c.on_surface_variant,
                             );
+                            drags.push(grip);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if opts.removable
+                                    && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.delete"))).double_clicked()
+                                {
+                                    remove = true;
+                                }
+                                if opts.hideable && ui.add(IconButton::new(icons::VISIBILITY_OFF).size(28.0).tooltip(w.i18n.t("widget.hide"))).clicked() {
+                                    hide = true;
+                                }
+                                // as wide as the widget was last frame, never wider (that would grow it)
+                                let want = last_w - 16.0 - 24.0 - ui.min_rect().width() - 2.0 * ui.spacing().item_spacing.x;
+                                let (strip, resp) = ui.allocate_exact_size(Vec2::new(want.clamp(24.0, ui.available_width().max(24.0)), 24.0), Sense::drag());
+                                if resp.hovered() || resp.dragged() {
+                                    ui.painter().text(
+                                        strip.left_center(),
+                                        Align2::LEFT_CENTER,
+                                        "drag to move",
+                                        egui::FontId::proportional(11.0),
+                                        c.on_surface_variant,
+                                    );
+                                }
+                                drags.push(resp);
+                            });
+                        });
+                        for drag in drags {
                             let drag = drag.on_hover_cursor(egui::CursorIcon::Grab);
                             if drag.dragged() {
                                 let d = drag.drag_delta();
@@ -169,23 +199,14 @@ pub fn anchored<R>(
                             if drag.drag_started() {
                                 crate::wm::bring_to_top(w.cfg, wm_id);
                             }
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if opts.removable
-                                    && ui.add(IconButton::new(icons::DELETE).size(28.0).tooltip(w.i18n.t("widget.delete"))).double_clicked()
-                                {
-                                    remove = true;
-                                }
-                                if opts.hideable && ui.add(IconButton::new(icons::VISIBILITY_OFF).size(28.0).tooltip(w.i18n.t("widget.hide"))).clicked() {
-                                    hide = true;
-                                }
-                            });
-                        });
+                        }
                     }
                     body(ui, w)
                 })
                 .inner
         });
 
+    ctx.data_mut(|d| d.insert_temp(width_id, resp.response.rect.width()));
     ChromeResult { inner: Some(resp.inner), rect: resp.response.rect, hide, remove }
 }
 

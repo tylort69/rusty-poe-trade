@@ -63,10 +63,38 @@ pub fn page(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
                     }
                 }
             }
+            if *tool == "rpt-whispers" {
+                quick_keys(ui, w, st);
+            }
         });
         ui.add_space(6.0);
     }
     if let Some(tool) = open {
         open_tool(w, tool);
+    }
+}
+
+/// Hotkeys for the whispers quick-action bar (they work in game, overlay closed).
+fn quick_keys(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
+    use crate::widgets::whispers::QuickAction;
+    let i18n = w.i18n;
+    let Some(wh) = w.cfg.widgets.iter_mut().find_map(|x| match &mut x.kind {
+        crate::config::WidgetKind::Whispers(x) => Some(x),
+        _ => None,
+    }) else {
+        return;
+    };
+    for qa in QuickAction::ALL {
+        let mut key = wh.quick_keys.get(qa.key()).cloned();
+        if hotkey_row(ui, &mut st.cap, i18n, qa.describe(), &mut key, false) {
+            match key.filter(|k| !k.is_empty()) {
+                Some(k) => {
+                    wh.quick_keys.insert(qa.key().to_owned(), k);
+                }
+                None => {
+                    wh.quick_keys.remove(qa.key());
+                }
+            }
+        }
     }
 }

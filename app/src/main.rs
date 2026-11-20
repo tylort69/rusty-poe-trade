@@ -40,6 +40,12 @@ fn main() -> eframe::Result {
         .init();
 
     let windowed = std::env::args().any(|a| a == "--windowed");
+    // Window-manager rules must exist before our windows map (e.g. the
+    // popped-out whispers window is created on the first frame).
+    #[cfg(target_os = "linux")]
+    if !windowed {
+        rpt_platform::prepare_window_rules();
+    }
     let store = store::ConfigStore::new();
     let cfg = store.load();
     if let Err(e) = rpt_data::init(&cfg.language) {

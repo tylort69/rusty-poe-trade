@@ -43,6 +43,8 @@ pub struct Whisper {
     /// Player joined and left again.
     pub left: bool,
     pub completed: bool,
+    /// When "Trade accepted." was logged for this card (0 = not traded).
+    pub completed_at: LogSecs,
 }
 
 impl Whisper {
@@ -92,7 +94,7 @@ impl WhisperBook {
     /// Feed one raw Client.txt line. `language` is the app/game language.
     pub fn feed(&mut self, line: &str, language: &str) -> Vec<Effect> {
         let mut out = Vec::new();
-        if let Some((_, ev)) = parse_line(line) {
+        if let Some((ts, ev)) = parse_line(line) {
             match ev {
                 LogEvent::Joined { name } => self.for_player(&name, |w| {
                     w.in_area = true;
@@ -108,6 +110,7 @@ impl WhisperBook {
                     if let Some(i) = self.trade_card() {
                         let w = &mut self.list[i];
                         w.completed = true;
+                        w.completed_at = ts;
                         out.push(Effect::Completed { id: w.id, dir: w.dir, player: w.player.clone() });
                     }
                     self.trade_target = None;
@@ -164,6 +167,7 @@ impl WhisperBook {
                     in_area: false,
                     left: false,
                     completed: false,
+                    completed_at: 0,
                 },
             );
             if dir == Dir::Incoming {
@@ -195,6 +199,30 @@ impl WhisperBook {
             .iter()
             .position(|w| open(&w) && w.dir == Dir::Incoming && w.in_area)
             .or_else(|| self.list.iter().position(|w| open(&w) && w.dir == Dir::Outgoing && w.invited))
+    }
+
+    /// Quick action "Invite": the newest open incoming whisper, preferring one
+    /// not invited yet.
+    pub fn invite_target(&self) -> Option<&Whisper> {
+        let open = || self.list.iter().filter(|w| w.dir == Dir::Incoming && !w.completed);
+        open().find(|w| !w.invited).or_else(|| open().next())
+    }
+
+    /// Quick action "Trade": the newest open incoming buyer in your area,
+    /// else the newest one you invited.
+    pub fn trade_target(&self) -> Option<&Whisper> {
+        let open = || self.list.iter().filter(|w| w.dir == Dir::Incoming && !w.completed);
+        open().find(|w| w.in_area).or_else(|| open().find(|w| w.invited))
+    }
+
+    /// Quick actions "Thanks" / "Kick": the player you traded with most
+    /// recently, else the buyer in your area / party right now.
+    pub fn party_target(&self) -> Option<&Whisper> {
+        self.list
+            .iter()
+            .filter(|w| w.completed)
+            .max_by_key(|w| w.completed_at)
+            .or_else(|| self.trade_target())
     }
 
     pub fn get(&self, id: u64) -> Option<&Whisper> {

@@ -700,6 +700,17 @@ impl Config {
                 push(k.clone(), true, ShortcutKind::TriggerEvent { target: format!("open-tool:{tool}") });
             }
         }
+        if let Some(wh) = self.widgets.iter().find_map(|w| match &w.kind {
+            WidgetKind::Whispers(x) => Some(x),
+            _ => None,
+        }) {
+            for (action, k) in &wh.quick_keys {
+                if !k.is_empty() {
+                    // types into chat: release the held modifiers first
+                    push(k.clone(), false, ShortcutKind::TriggerEvent { target: format!("whisper-quick:{action}") });
+                }
+            }
+        }
         let ic = self.item_check();
         for (key, target) in [
             (&ic.wiki_key, "open-wiki"),

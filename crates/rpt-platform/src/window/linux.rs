@@ -210,7 +210,18 @@ const OVERLAY_CLASS: &str = "rusty-poe-trade";
 /// and keybinds such as fullscreen would hit the overlay instead of the game.
 /// The overlay still gets keyboard input when active via X11 `SetInputFocus`. Nothing is written to the user's config;
 /// the rule disappears on `hyprctl reload`. `RPT_NO_HYPR_RULES=1` skips it.
-fn hyprland_overlay_rule() {
+/// Titles of popped-out tool windows (regex alternatives).
+const POPOUT_TITLES: &str = "Trade whispers";
+
+/// Register the Hyprland runtime rules once. Called at startup (before any
+/// window maps: rules only apply to windows mapped after them) and again,
+/// harmlessly, when the overlay window is known.
+pub fn hyprland_overlay_rule() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(hyprland_overlay_rule_inner);
+}
+
+fn hyprland_overlay_rule_inner() {
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() || std::env::var_os("RPT_NO_HYPR_RULES").is_some() {
         return;
     }
@@ -228,10 +239,22 @@ fn hyprland_overlay_rule() {
         "hl.window_rule({{ name = \"rusty-poe-trade-overlay-{}\", match = {{ class = \"^({OVERLAY_CLASS})$\" }}, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})",
         std::process::id()
     );
+    // Popped-out tool windows (e.g. "Trade whispers") share the class but
+    // must float so they can be dragged to any monitor instead of tiling.
+    let popout_lua = format!(
+        "hl.window_rule({{ name = \"rusty-poe-trade-popout-{}\", match = {{ class = \"^({OVERLAY_CLASS})$\", title = \"^({POPOUT_TITLES})$\" }}, float = true }})",
+        std::process::id()
+    );
     if run(&["eval", &lua]) {
         tracing::info!("Hyprland: added runtime window rule for the overlay (no focus/blur/shadow/dim/anim)");
+        if run(&["eval", &popout_lua]) {
+            tracing::info!("Hyprland: added runtime window rule to float popped-out windows");
+        } else {
+            tracing::warn!("Hyprland: could not add the float rule for popped-out windows");
+        }
         return;
     }
+    let _ = run(&["keyword", "windowrulev2", &format!("float, class:^({OVERLAY_CLASS})$, title:^({POPOUT_TITLES})$")]);
     // Older Hyprland (hyprlang config)
     let ok = ["nofocus", "noblur", "noshadow", "nodim", "noanim", "noborder"]
         .iter()

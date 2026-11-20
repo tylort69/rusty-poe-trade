@@ -392,6 +392,7 @@ impl App {
         for (_, id) in order {
             widgets::draw_widget(&ctx, &mut w, &mut self.rt, id);
         }
+        widgets::draw_popouts(&ctx, &mut w, &mut self.rt);
         if w.save_requested {
             self.dirty_since.get_or_insert_with(Instant::now);
         }

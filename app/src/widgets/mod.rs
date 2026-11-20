@@ -91,6 +91,12 @@ pub struct Runtime {
     pub pob: pob::PobState,
 }
 
+/// Widgets drawn in their own OS windows (outside the game overlay). Call
+/// once per frame after the overlay widgets.
+pub fn draw_popouts(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime) {
+    whispers::show_popout(ctx, w, &mut rt.whispers);
+}
+
 pub fn draw_widget(ctx: &egui::Context, w: &mut WCtx<'_>, rt: &mut Runtime, wm_id: u32) {
     let Some(kind) = w.cfg.widgets.iter().find(|x| x.wm_id == wm_id).map(|x| x.kind.type_name()) else { return };
     match kind {
@@ -124,6 +130,8 @@ pub fn handle_event(w: &mut WCtx<'_>, rt: &mut Runtime, ev: &HostEvent) {
         HostEvent::WidgetAction { target } => {
             if let Some(tool) = target.strip_prefix("open-tool:") {
                 open_tool(w, tool);
+            } else if let Some(qa) = target.strip_prefix("whisper-quick:").and_then(whispers::QuickAction::from_key) {
+                whispers::quick(w, &mut rt.whispers, qa);
             } else if let Some(id) = target.strip_prefix("stopwatch-start-stop:").and_then(|s| s.parse().ok()) {
                 rt.timers.entry(id).or_default().toggle();
             } else if let Some(id) = target.strip_prefix("stopwatch-reset:").and_then(|s| s.parse().ok()) {
