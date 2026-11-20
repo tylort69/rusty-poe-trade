@@ -540,6 +540,7 @@ impl Core {
         } else if area.area.contains_strict(x, y) {
             self.assert_overlay_active();
         } else if self.interactable {
+            tracing::info!("back to game: pointer ({x:.0}, {y:.0}) left the tracked area {:?}", area.area);
             self.remove_area_listeners();
             self.assert_game_active();
         }

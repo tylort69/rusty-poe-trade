@@ -86,7 +86,7 @@ pub fn on_item_text(w: &mut WCtx<'_>, st: &mut ItemCheckState, ev: &HostEvent) {
         "item-check" => {
             let ctx = w.services.ctx().clone();
             let ppp = ctx.pixels_per_point();
-            let origin = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)).map(|r| r.min).unwrap_or(Pos2::ZERO);
+            let origin = w.st.origin.or_else(|| ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)).map(|r| r.min)).unwrap_or(Pos2::ZERO);
             // ppp includes the overlay zoom; `origin` is in points of this same pass.
             st.check_position = crate::platform_glue::coords::screen_to_local(*position, origin, ppp);
             st.item = rpt_parser::parse_clipboard(clipboard).ok();

@@ -63,7 +63,7 @@ impl App {
         let (tx, rx) = crossbeam_channel::unbounded();
         let platform = crate::platform_glue::PlatformGlue::start(&cfg, tx, ctx.clone(), store.dir());
 
-        let st = OverlayState { active: opts.windowed, game_focused: false, hide_ui: false };
+        let st = OverlayState { active: opts.windowed, game_focused: false, hide_ui: false, origin: None };
         Self {
             theme_key: cfg.rpt.theme_settings(cfg.font_size),
             cfg,
@@ -246,6 +246,7 @@ impl App {
                 widgets::open_tool(&mut w, &tool);
                 self.dirty_since.get_or_insert_with(Instant::now);
             } else if k == self.cfg.overlay_key {
+                tracing::info!("back to game: overlay key {k}");
                 self.host.push(HostCommand::FocusGame);
             }
         }
@@ -353,6 +354,7 @@ impl App {
             ui.painter().rect_filled(screen, 0.0, bg);
             let resp = ui.interact(screen, ui.scope_id().with("overlay-bg"), Sense::click());
             if resp.clicked() && !self.windowed && self.cfg.overlay_background_close {
+                tracing::info!("back to game: click on overlay background at {:?}", resp.interact_pointer_pos());
                 self.host.push(HostCommand::FocusGame);
             } else if resp.clicked() && self.windowed {
                 if let Some(ex) = wm::shown_exclusive(&self.cfg).map(|w| w.wm_id) {
@@ -418,12 +420,17 @@ impl eframe::App for App {
         self.platform.set_window(frame);
         // Escape inside the active overlay returns to the game (upstream main process did this).
         if self.st.active && !self.windowed && ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !ctx.egui_wants_keyboard_input() {
+            tracing::info!("back to game: Escape");
             self.host.push(HostCommand::FocusGame);
         }
         self.keyboard_zoom(ctx);
         self.overlay_hotkeys(ctx);
         self.sync_trade_session(ctx);
         self.log_screen(ctx);
+        // The overlay's absolute origin, from the platform's measurement of the
+        // game window (the toolkit's own idea of the window position goes stale
+        // when the platform layer moves the unmanaged window itself).
+        self.st.origin = self.platform.game_rect_px().map(|r| egui::pos2(r.x as f32, r.y as f32) / ctx.pixels_per_point());
         self.handle_events(ctx);
         if self.services.sync_into(&mut self.cfg) { self.dirty_since.get_or_insert_with(Instant::now); }
         self.sync_zoom(ctx);

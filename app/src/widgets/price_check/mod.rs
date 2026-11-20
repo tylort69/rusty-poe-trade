@@ -130,7 +130,7 @@ pub fn on_item_text(w: &mut WCtx<'_>, st: &mut PriceCheckState, ev: &HostEvent) 
     let Some(id) = wm::id_of(w.cfg, "price-check") else { return };
     let ctx = w.services.ctx().clone();
     let ppp = ctx.pixels_per_point();
-    let origin = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)).map(|r| r.min).unwrap_or(Pos2::ZERO);
+    let origin = w.st.origin.or_else(|| ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)).map(|r| r.min)).unwrap_or(Pos2::ZERO);
     let abs = Pos2::new(position.x / ppp, position.y / ppp);
     let local = abs - origin.to_vec2();
 

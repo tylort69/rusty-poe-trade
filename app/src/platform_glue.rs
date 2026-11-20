@@ -170,12 +170,15 @@ impl PlatformGlue {
             HostCommand::FocusOverlay => p.set_overlay_active(true),
             HostCommand::StashSearch(t) => p.stash_search(&t),
             HostCommand::PasteInChat { text, send } => p.paste_in_chat(&text, send),
-            HostCommand::TrackArea { hold_key, close_threshold, from, area, dpr } => p.track_area(rpt_platform::TrackArea {
+            HostCommand::TrackArea { hold_key, close_threshold, from, area, dpr } => {
+                tracing::info!("track area: from {from:?}, area {area:?} (points), dpr {dpr}");
+                p.track_area(rpt_platform::TrackArea {
                 hold_key,
                 close_threshold: close_threshold as f64,
                 from: coords::pos_to_physical(from, dpr),
                 area: coords::rect_to_physical(area, dpr),
-            }),
+                })
+            }
             HostCommand::CheckForUpdate => p.check_for_update(),
             HostCommand::ToggleOverlay => p.toggle_overlay(),
             HostCommand::OpenConfigFolder => {

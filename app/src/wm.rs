@@ -11,6 +11,9 @@ pub struct OverlayState {
     pub game_focused: bool,
     /// The game hid its UI (upstream `hideUI`, from `MAIN->OVERLAY::visibility`).
     pub hide_ui: bool,
+    /// Top-left of the game client area in absolute egui points (the overlay's
+    /// origin), measured by the platform layer. `None` until known.
+    pub origin: Option<egui::Pos2>,
 }
 
 pub fn find_mut(cfg: &mut Config, wm_id: u32) -> Option<&mut Widget> {
