@@ -64,6 +64,14 @@ impl Account {
         self.client.clone()
     }
 
+    /// The POESESSID when signed in with the session cookie (not OAuth).
+    pub fn session_cookie(&self) -> Option<String> {
+        match self.client.credentials() {
+            Some(Credentials::Session { poesessid, .. }) => Some(poesessid.expose().to_owned()),
+            _ => None,
+        }
+    }
+
     pub fn state(&self) -> AccountState {
         self.state.lock().clone()
     }

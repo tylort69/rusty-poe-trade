@@ -171,6 +171,11 @@ pub struct TradeClient {
     pub(crate) fetch_cache: Cache<Vec<FetchResult>>,
     pub(crate) bulk_cache: Cache<BulkSearchResponse>,
     pub(crate) poeprices_cache: Cache<crate::poeprices::PoepricesApiResponse>,
+    pub(crate) whisper_limits: RateLimitRules,
+    /// POESESSID of the signed-in account (Settings → Account). Only sent to
+    /// www.pathofexile.com; makes listings include the seller's character
+    /// name, whisper text and whisper / hideout tokens.
+    session: RwLock<Option<String>>,
 }
 
 impl TradeClient {
@@ -194,7 +199,50 @@ impl TradeClient {
             fetch_cache: Cache::new(),
             bulk_cache: Cache::new(),
             poeprices_cache: Cache::new(),
+            whisper_limits: RateLimitRules::new("trade-whisper-request-limit", vec![RateLimiter::new(1, 2.0)]),
+            session: RwLock::new(None),
         }
+    }
+
+    /// Set or clear the account session cookie used for trade requests.
+    pub fn set_session_cookie(&self, poesessid: Option<String>) {
+        *self.session.write() = poesessid.filter(|s| !s.is_empty());
+    }
+
+    pub fn has_session(&self) -> bool {
+        self.session.read().is_some()
+    }
+
+    /// Attach the session cookie, but only for the international site (the
+    /// cookie belongs to www.pathofexile.com).
+    pub(crate) fn with_session(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match (&*self.session.read(), self.trade_endpoint()) {
+            (Some(sid), "www.pathofexile.com") => req.header(reqwest::header::COOKIE, format!("POESESSID={sid}")),
+            _ => req,
+        }
+    }
+
+    /// The trade site's "Travel to Hideout" (instant buyout) and "Direct
+    /// Whisper" buttons: POST the listing's `hideout_token` / `whisper_token`
+    /// to `/api/trade/whisper`. The game client (logged in on the same
+    /// account) then acts on it. Requires the session cookie.
+    pub async fn trade_whisper(&self, token: &str) -> Result<()> {
+        if !self.has_session() {
+            return Err(TradeError::Precondition("Sign in under Settings → Account first.".into()));
+        }
+        self.whisper_limits.wait_multi().await;
+        let host = "www.pathofexile.com";
+        let req = self
+            .http()
+            .post(format!("https://{host}/api/trade/whisper"))
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header(reqwest::header::ORIGIN, format!("https://{host}"))
+            .header(reqwest::header::REFERER, format!("https://{host}/trade"))
+            .body(serde_json::json!({ "token": token }).to_string());
+        let _: serde_json::Value = self.trade_api(self.with_session(req), &self.whisper_limits).await?;
+        Ok(())
     }
 
     pub fn http(&self) -> &reqwest::Client {

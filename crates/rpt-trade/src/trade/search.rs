@@ -762,6 +762,22 @@ pub struct FetchItem {
     pub properties: Option<Vec<FetchItemProperty>>,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub type_line: Option<String>,    #[serde(default)]
+    pub league: Option<String>,
+}
+
+/// Where the item sits in the seller's stash (`listing.stash`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ListingStash {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub x: i64,
+    #[serde(default)]
+    pub y: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -780,6 +796,16 @@ pub struct Listing {
     #[serde(default)]
     pub fee: Option<f64>,
     pub account: Account,
+    #[serde(default)]
+    pub stash: Option<ListingStash>,
+    /// Ready-made whisper (only present when the request carried a session cookie).
+    #[serde(default)]
+    pub whisper: Option<String>,
+    #[serde(default)]
+    pub whisper_token: Option<String>,
+    /// Instant buyout: token for "Travel to Hideout" (session cookie only).
+    #[serde(default)]
+    pub hideout_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -810,6 +836,14 @@ pub struct PricingResult {
     pub account_name: String,
     pub account_status: AccountStatus,
     pub ign: String,
+    /// Listed in a merchant tab with a gold fee: buy instantly by travelling
+    /// to the seller's hideout. Otherwise an in-person trade.
+    pub instant_buyout: bool,
+    /// Whisper to paste in game chat for in-person trades.
+    pub whisper: Option<String>,
+    pub whisper_token: Option<String>,
+    pub hideout_token: Option<String>,
+    pub stash: Option<ListingStash>,
 }
 
 fn fetch_result_to_pricing(result: &FetchResult, account_name: &str, now: chrono::DateTime<chrono::Utc>) -> PricingResult {
@@ -840,7 +874,39 @@ fn fetch_result_to_pricing(result: &FetchResult, account_name: &str, now: chrono
         ign: listing.account.last_character_name.clone(),
         account_name: listing.account.name.clone(),
         account_status: if listing.fee.is_some() { AccountStatus::Online } else { listing.account.status() },
+        instant_buyout: listing.fee.is_some() || listing.hideout_token.is_some(),
+        whisper: listing.whisper.clone().filter(|w| !w.contains("{0}")).or_else(|| compose_whisper(result)),
+        whisper_token: listing.whisper_token.clone(),
+        hideout_token: listing.hideout_token.clone(),
+        stash: listing.stash.clone(),
     }
+}
+
+/// The trade site's standard whisper, built from the listing when the API
+/// didn't include one (needs the seller's character name):
+/// `@Char Hi, I would like to buy your <item> listed for <amount> <currency> in <league> (stash tab "<tab>"; position: left <x>, top <y>)`
+/// Positions are 1-based like the site's.
+pub fn compose_whisper(result: &FetchResult) -> Option<String> {
+    let l = &result.listing;
+    let ign = l.account.last_character_name.trim();
+    if ign.is_empty() {
+        return None;
+    }
+    let name = match (result.item.name.as_deref().unwrap_or(""), result.item.type_line.as_deref().unwrap_or("")) {
+        ("", t) => t.to_owned(),
+        (n, t) => format!("{n} {t}"),
+    };
+    let mut msg = format!("@{ign} Hi, I would like to buy your {name}");
+    if let Some(p) = &l.price {
+        msg.push_str(&format!(" listed for {} {}", crate::js::num_to_string(p.amount), p.currency));
+    }
+    if let Some(league) = &result.item.league {
+        msg.push_str(&format!(" in {league}"));
+    }
+    if let Some(s) = &l.stash {
+        msg.push_str(&format!(" (stash tab \"{}\"; position: left {}, top {})", s.name, s.x + 1, s.y + 1));
+    }
+    Some(msg)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -944,7 +1010,7 @@ impl TradeClient {
                 struct FetchResponse {
                     result: Vec<Option<FetchResult>>,
                 }
-                let resp: FetchResponse = self.trade_api(self.http().get(url), &self.fetch_limits).await?;
+                let resp: FetchResponse = self.trade_api(self.with_session(self.http().get(url)), &self.fetch_limits).await?;
                 let data: Vec<FetchResult> = resp.result.into_iter().flatten().collect();
                 let ttl = Cache::<Vec<FetchResult>>::derive_ttl(
                     self.search_limits.snapshot().len() + self.fetch_limits.snapshot().len(),
@@ -1041,4 +1107,43 @@ pub fn make_trade_link(
             format!("https://{endpoint}/trade/search/{league}?q={}", encode_uri_component(&q))
         }
     })
+}
+
+#[cfg(test)]
+mod sale_tests {
+    use super::*;
+
+    fn listing(json: &str) -> FetchResult {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn instant_buyout_vs_in_person_and_whisper() {
+        let now = chrono::Utc::now();
+        let merchant = listing(r#"{"id":"a","item":{"name":"","typeLine":"Simple Robe","league":"Standard"},
+            "listing":{"indexed":"2026-11-19T21:16:15Z","stash":{"name":"11","x":2,"y":9},
+            "price":{"type":"~b/o","amount":1,"currency":"alch"},"fee":450,"hideout_token":"tok",
+            "account":{"name":"Seller#1234","lastCharacterName":"SellerChar"}}}"#);
+        let r = fetch_result_to_pricing(&merchant, "Me#1", now);
+        assert!(r.instant_buyout);
+        assert_eq!(r.hideout_token.as_deref(), Some("tok"));
+
+        let in_person = listing(r#"{"id":"b","item":{"name":"Tabula Rasa","typeLine":"Simple Robe","league":"Standard"},
+            "listing":{"indexed":"2026-11-19T21:16:15Z","stash":{"name":"~price 10 chaos","x":0,"y":3},
+            "price":{"type":"~price","amount":10,"currency":"chaos"},
+            "account":{"name":"Seller#1234","lastCharacterName":"SellerChar"}}}"#);
+        let r = fetch_result_to_pricing(&in_person, "Me#1", now);
+        assert!(!r.instant_buyout);
+        assert_eq!(
+            r.whisper.as_deref(),
+            Some(r#"@SellerChar Hi, I would like to buy your Tabula Rasa Simple Robe listed for 10 chaos in Standard (stash tab "~price 10 chaos"; position: left 1, top 4)"#)
+        );
+
+        // The API's own whisper wins when present; logged-out listings have no character → no whisper.
+        let api = listing(r#"{"id":"c","item":{"typeLine":"Simple Robe"},"listing":{"indexed":"x","whisper":"@X hi from api",
+            "account":{"name":"S#1","lastCharacterName":"X"}}}"#);
+        assert_eq!(fetch_result_to_pricing(&api, "", now).whisper.as_deref(), Some("@X hi from api"));
+        let anon = listing(r#"{"id":"d","item":{"typeLine":"Simple Robe"},"listing":{"indexed":"x","account":{"name":"S#1"}}}"#);
+        assert!(fetch_result_to_pricing(&anon, "", now).whisper.is_none());
+    }
 }

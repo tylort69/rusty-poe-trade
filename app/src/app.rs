@@ -39,6 +39,8 @@ pub struct App {
     /// Last game rect (physical px) + ppp bits the window was moved/resized for.
     game_sync: Option<(rpt_platform::Rect, u32)>,
     snackbar: rpt_m3::Snackbar,
+    /// Session cookie last handed to the trade client.
+    trade_sid: Option<String>,
     logs: Vec<String>,
 }
 
@@ -77,6 +79,7 @@ impl App {
             passthrough: None,
             game_sync: None,
             snackbar: rpt_m3::Snackbar::default(),
+            trade_sid: None,
             logs: Vec::new(),
         }
     }
@@ -185,6 +188,18 @@ impl App {
         let z = self.cfg.rpt.zoom();
         if ctx.zoom_factor() != z {
             ctx.set_zoom_factor(z);
+        }
+    }
+
+    /// Restore the saved sign-in at startup and hand its session cookie to the
+    /// trade client, so listings include whisper / hideout details.
+    fn sync_trade_session(&mut self, ctx: &Context) {
+        let acct = crate::account::get(ctx);
+        acct.ensure_restored(&self.cfg);
+        let sid = acct.session_cookie();
+        if sid != self.trade_sid {
+            self.services.trade.set_session_cookie(sid.clone());
+            self.trade_sid = sid;
         }
     }
 
@@ -389,6 +404,7 @@ impl eframe::App for App {
         }
         self.keyboard_zoom(ctx);
         self.overlay_hotkeys(ctx);
+        self.sync_trade_session(ctx);
         self.handle_events(ctx);
         if self.services.sync_into(&mut self.cfg) { self.dirty_since.get_or_insert_with(Instant::now); }
         self.sync_zoom(ctx);

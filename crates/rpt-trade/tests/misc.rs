@@ -77,6 +77,11 @@ fn pr(id: &str, account: &str, amount: f64, fee: bool) -> PricingResult {
         account_name: account.into(),
         account_status: AccountStatus::Online,
         ign: String::new(),
+        instant_buyout: fee,
+        whisper: None,
+        whisper_token: None,
+        hideout_token: None,
+        stash: None,
     }
 }
 

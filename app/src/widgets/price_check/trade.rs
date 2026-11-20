@@ -262,6 +262,10 @@ pub fn trade_listing(
     if st.result.is_none() {
         rpt_m3::linear_progress(ui, None);
     }
+    if let Some((msg, err)) = &env.travel_msg {
+        rpt_m3::banner(ui, if *err { icons::ERROR } else { icons::INFO }, msg.clone(), *err);
+    }
+    let signed_in = env.sv.trade.has_session();
 
     let ready = slowdown.is_ready(ui.ctx(), 900);
     let grouped: Vec<GroupedResult> = if ready { st.result.as_ref().map(|r| r.grouped()).unwrap_or_default() } else { Vec::new() };
@@ -270,7 +274,7 @@ pub fn trade_listing(
     let has_ilvl = filters.item_level.is_some();
     let is_gem = item.category == Some(ItemCategory::Gem);
     let has_q = filters.quality.is_some() || is_gem;
-    let cols = 2 + has_stack as usize + has_ilvl as usize + is_gem as usize + has_q as usize + seller.is_some() as usize;
+    let cols = 4 + has_stack as usize + has_ilvl as usize + is_gem as usize + has_q as usize + seller.is_some() as usize;
     egui::Grid::new(ui.scope_id().with("listing")).striped(true).min_row_height(24.0).spacing(vec2(12.0, 2.0)).show(ui, |ui| {
         header_cell(ui, &env.t("trade_result.price"));
         if has_stack {
@@ -289,6 +293,8 @@ pub fn trade_listing(
         if seller.is_some() {
             header_cell(ui, &env.t("trade_result.seller"));
         }
+        header_cell(ui, "Sale");
+        header_cell(ui, "Action");
         ui.end_row();
         for r in &grouped {
             let res = &r.result;
@@ -325,6 +331,7 @@ pub fn trade_listing(
             if seller.is_some() {
                 seller_cell(ui, env, res.is_mine, &res.ign, &res.account_name);
             }
+            sale_cells(ui, env, res, signed_in);
             ui.end_row();
         }
         for _ in grouped.len()..SHOW_RESULTS {
@@ -332,6 +339,39 @@ pub fn trade_listing(
         }
     });
     TradeAction::None
+}
+
+/// "Sale" (instant buyout vs in person) and "Action" (Travel / Whisper) cells.
+fn sale_cells(ui: &mut Ui, env: &Env<'_>, res: &rpt_trade::trade::search::PricingResult, signed_in: bool) {
+    let c = theme(ui.ctx()).colors;
+    const HOME: &str = "\u{e88a}"; // Material Icons Round "home"
+    let sign_in = "Sign in under Settings → Account so listings include the seller's whisper and hideout details.";
+    if res.instant_buyout {
+        rpt_m3::tonal_badge(ui, "Instant buyout", c.primary_container, c.on_primary_container)
+            .on_hover_text("Listed in a merchant tab: buy it in the seller's hideout without trading in person.");
+        let tip = match (&res.hideout_token, &res.stash) {
+            (Some(_), Some(s)) => format!("Travel to the seller's hideout. The item is highlighted in tab \"{}\" (left {}, top {}).", s.name, s.x + 1, s.y + 1),
+            (Some(_), None) => "Travel to the seller's hideout. The item is highlighted in their stash.".to_owned(),
+            (None, _) if !signed_in => sign_in.to_owned(),
+            (None, _) => "pathofexile.com didn't send a hideout link for this listing.".to_owned(),
+        };
+        let enabled = res.hideout_token.is_some() && !res.is_mine;
+        if ui.add(Button::tonal("Travel").icon(HOME).small().enabled(enabled)).on_hover_text(tip).on_disabled_hover_text(if signed_in { "No hideout link for this listing." } else { sign_in }).clicked() {
+            if let Some(t) = &res.hideout_token {
+                env.travel(t.clone());
+            }
+        }
+    } else {
+        rpt_m3::tonal_badge(ui, "In person", c.surface_container_highest, c.on_surface_variant)
+            .on_hover_text("Whisper the seller and trade in person.");
+        let enabled = res.whisper.is_some() && !res.is_mine;
+        let tip = res.whisper.clone().unwrap_or_else(|| if signed_in { "The seller's character name is unknown for this listing.".into() } else { sign_in.into() });
+        if ui.add(Button::tonal("Whisper").icon(icons::CHAT).small().enabled(enabled)).on_hover_text(&tip).on_disabled_hover_text(tip.clone()).clicked() {
+            if let Some(w) = &res.whisper {
+                env.whisper(w.clone());
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

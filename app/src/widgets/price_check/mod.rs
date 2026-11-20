@@ -43,6 +43,10 @@ pub struct Env<'a> {
     item_name: String,
     /// (name, url) pairs the user saved to the Market widget this frame.
     saved_searches: RefCell<Vec<(String, String)>>,
+    /// Hideout tokens the user clicked "Travel" on this frame.
+    travel: RefCell<Vec<String>>,
+    /// Result of the last Travel request: (message, is_error).
+    pub travel_msg: Option<(String, bool)>,
 }
 
 impl Env<'_> {
@@ -51,6 +55,14 @@ impl Env<'_> {
     }
     pub fn open_url(&self, url: String) {
         self.commands.borrow_mut().push(HostCommand::OpenUrl(url));
+    }
+    /// Paste a whisper into game chat and send it.
+    pub fn whisper(&self, text: String) {
+        self.commands.borrow_mut().push(HostCommand::PasteInChat { text, send: true });
+    }
+    /// Instant buyout: ask pathofexile.com to send the game to the seller's hideout.
+    pub fn travel(&self, hideout_token: String) {
+        self.travel.borrow_mut().push(hideout_token);
     }
     /// Save a trade search to the Market widget's "Saved searches".
     pub fn save_search(&self, url: String) {
@@ -80,6 +92,8 @@ pub struct PriceCheckState {
     support_counter: u32,
     show_support_links: bool,
     last_do_search: Option<bool>,
+    travel_task: Option<crate::services::Task<Result<(), String>>>,
+    travel_msg: Option<(String, bool)>,
 }
 
 /// Parse the clipboard like `PriceCheckWindow.vue` (sentinels are unsupported).
@@ -224,6 +238,8 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
         commands: RefCell::new(Vec::new()),
         item_name,
         saved_searches: RefCell::new(Vec::new()),
+        travel: RefCell::new(Vec::new()),
+        travel_msg: st.travel_msg.clone(),
     };
 
     // CheckPositionCircle
@@ -356,6 +372,21 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
 
     for cmd in env.commands.into_inner() {
         w.host.push(cmd);
+    }
+    for token in env.travel.into_inner() {
+        let trade = w.services.trade.clone();
+        st.travel_msg = Some(("Asking pathofexile.com to send you to the seller's hideout…".into(), false));
+        st.travel_task = Some(w.services.spawn(async move { trade.trade_whisper(&token).await.map_err(|e| e.to_string()) }));
+    }
+    if let Some(r) = st.travel_task.as_mut().and_then(|t| t.poll_take()) {
+        st.travel_task = None;
+        st.travel_msg = Some(match r {
+            Ok(()) => {
+                w.host.push(HostCommand::FocusGame);
+                ("Travelling to the seller's hideout. The item is highlighted in their stash.".into(), false)
+            }
+            Err(e) => (format!("Couldn't travel: {e}"), true),
+        });
     }
     for (name, url) in env.saved_searches.into_inner() {
         match crate::widgets::market::save_search(w.cfg, &name, &url) {
