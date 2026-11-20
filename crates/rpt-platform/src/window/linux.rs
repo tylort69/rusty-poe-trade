@@ -196,6 +196,43 @@ impl Tracker {
     }
 }
 
+/// Position/size of the XWayland client titled `title`, from Hyprland's IPC
+/// socket (`j/clients`). `None` when not on Hyprland or not found.
+fn hyprland_client_rect(title: &str) -> Option<Rect> {
+    use std::io::{Read, Write};
+    let sig = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")?;
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
+    let path = std::path::Path::new(&runtime).join("hypr").join(sig).join(".socket.sock");
+    let mut sock = std::os::unix::net::UnixStream::connect(path).ok()?;
+    sock.set_read_timeout(Some(Duration::from_millis(300))).ok()?;
+    sock.set_write_timeout(Some(Duration::from_millis(300))).ok()?;
+    sock.write_all(b"j/clients").ok()?;
+    let mut buf = Vec::new();
+    sock.read_to_end(&mut buf).ok()?;
+    parse_hyprland_clients(&buf, title)
+}
+
+fn parse_hyprland_clients(json: &[u8], title: &str) -> Option<Rect> {
+    let v: serde_json::Value = serde_json::from_slice(json).ok()?;
+    let c = v.as_array()?.iter().find(|c| {
+        c["title"].as_str() == Some(title) && c["xwayland"].as_bool() == Some(true) && c["hidden"].as_bool() != Some(true)
+    })?;
+    let n = |v: &serde_json::Value| v.as_i64().map(|x| x as i32);
+    Some(Rect { x: n(&c["at"][0])?, y: n(&c["at"][1])?, width: n(&c["size"][0])?, height: n(&c["size"][1])? })
+}
+
+#[cfg(test)]
+mod hypr_tests {
+    #[test]
+    fn parses_hyprland_clients() {
+        let j = br#"[{"title":"Steam","xwayland":true,"at":[0,0],"size":[10,10]},
+                     {"title":"Path of Exile","xwayland":true,"hidden":false,"at":[1920,1080],"size":[2560,1440]}]"#;
+        let r = super::parse_hyprland_clients(j, "Path of Exile").unwrap();
+        assert_eq!((r.x, r.y, r.width, r.height), (1920, 1080, 2560, 1440));
+        assert!(super::parse_hyprland_clients(j, "Nope").is_none());
+    }
+}
+
 /// The overlay's X11 class / Wayland app id (`ViewportBuilder::with_app_id`).
 const OVERLAY_CLASS: &str = "rusty-poe-trade";
 
@@ -408,7 +445,12 @@ impl Loop {
         let r = (|| -> anyhow::Result<Rect> {
             let g = self.conn.get_geometry(w)?.reply()?;
             let t = self.conn.translate_coordinates(w, self.root, 0, 0)?.reply()?;
-            Ok(Rect { x: t.dst_x as i32, y: t.dst_y as i32, width: g.width as i32, height: g.height as i32 })
+            let x11 = Rect { x: t.dst_x as i32, y: t.dst_y as i32, width: g.width as i32, height: g.height as i32 };
+            // Hyprland doesn't keep the X11 position of managed XWayland
+            // windows current (a fullscreen game can report y=0 while it is
+            // drawn at y=1080). Its own IPC has the real layout position.
+            let title = self.shared.lock().title.clone();
+            Ok(hyprland_client_rect(&title).unwrap_or(x11))
         })();
         match r {
             Ok(rect) => {
@@ -439,7 +481,7 @@ impl Loop {
             let t = self.conn.translate_coordinates(ov, self.root, 0, 0)?.reply()?;
             Ok((t.dst_x as i32, t.dst_y as i32, g.width as u32, g.height as u32))
         })();
-        if cur.ok() == Some(want) {
+        if cur.as_ref().ok() == Some(&want) {
             return;
         }
         let aux = x11rb::protocol::xproto::ConfigureWindowAux::new().x(want.0).y(want.1).width(want.2).height(want.3).stack_mode(x11rb::protocol::xproto::StackMode::ABOVE);
