@@ -90,10 +90,18 @@ fn error_box(ui: &mut Ui, env: &Env<'_>, err: &SearchError, link: Option<String>
 }
 
 /// `TradeLinks.vue` (the built-in browser is not available: always external).
-pub fn trade_links(ui: &mut Ui, env: &Env<'_>, link: impl FnOnce() -> Option<String>) {
+pub fn trade_links(ui: &mut Ui, env: &Env<'_>, link: impl Fn() -> Option<String>) {
     if ui.add(Button::tonal(env.t("trade_result.trade")).icon(icons::OPEN_IN_NEW).small()).clicked() {
         if let Some(l) = link() {
             env.open_url(l);
+        }
+    }
+    // Material Icons Round "bookmark_add"
+    const BOOKMARK_ADD: &str = "\u{e598}";
+    let save = rpt_m3::IconButton::new(BOOKMARK_ADD).size(28.0).tooltip("Save search to Market");
+    if ui.add(save).clicked() {
+        if let Some(l) = link() {
+            env.save_search(l);
         }
     }
 }
@@ -247,7 +255,7 @@ pub fn trade_listing(
             online_filter(ui, env, filters, TradeApi::Trade);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let l = link(filters);
-                trade_links(ui, env, || l);
+                trade_links(ui, env, || l.clone());
             });
         }
     });
@@ -376,7 +384,7 @@ pub fn trade_bulk(ui: &mut Ui, env: &Env<'_>, item: &ParsedItem, filters: &mut I
         if st.results.is_some() {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let l = env.sv.trade.make_bulk_trade_link(filters, item, &have_for(st.selected)).ok();
-                trade_links(ui, env, || l);
+                trade_links(ui, env, || l.clone());
             });
         }
     });

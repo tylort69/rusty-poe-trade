@@ -76,7 +76,7 @@ pub fn checked_item(ui: &mut Ui, env: &Env<'_>, s: &mut Session, league: &str, s
             if s.trade_api == TradeApi::Trade {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let link = s.presets.active_preset().and_then(|p| env.sv.trade.make_trade_link(&p.filters, &p.stats, None).ok());
-                    trade::trade_links(ui, env, || link);
+                    trade::trade_links(ui, env, || link.clone());
                 });
             }
         });

@@ -39,6 +39,10 @@ pub struct Env<'a> {
     pub sv: &'a Services,
     pub pc: &'a PriceCheckWidget,
     commands: RefCell<Vec<HostCommand>>,
+    /// Name for "Save search" (the checked item's display name).
+    item_name: String,
+    /// (name, url) pairs the user saved to the Market widget this frame.
+    saved_searches: RefCell<Vec<(String, String)>>,
 }
 
 impl Env<'_> {
@@ -47,6 +51,11 @@ impl Env<'_> {
     }
     pub fn open_url(&self, url: String) {
         self.commands.borrow_mut().push(HostCommand::OpenUrl(url));
+    }
+    /// Save a trade search to the Market widget's "Saved searches".
+    pub fn save_search(&self, url: String) {
+        let name = if self.item_name.is_empty() { "Price check".to_owned() } else { self.item_name.clone() };
+        self.saved_searches.borrow_mut().push((name, url));
     }
 }
 
@@ -204,7 +213,18 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
     let pc = w.cfg.price_check().clone();
     let width = (WINDOW_REM * w.cfg.font_size).min(screen.width());
     let win = position::window_rect(screen, st.side, width);
-    let env = Env { i18n: w.i18n, sv: w.services, pc: &pc, commands: RefCell::new(Vec::new()) };
+    let item_name = match &st.item {
+        Some(Ok(item)) => item.info.name.clone(),
+        _ => String::new(),
+    };
+    let env = Env {
+        i18n: w.i18n,
+        sv: w.services,
+        pc: &pc,
+        commands: RefCell::new(Vec::new()),
+        item_name,
+        saved_searches: RefCell::new(Vec::new()),
+    };
 
     // CheckPositionCircle
     if w.st.active && pc.show_cursor {
@@ -336,6 +356,12 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
 
     for cmd in env.commands.into_inner() {
         w.host.push(cmd);
+    }
+    for (name, url) in env.saved_searches.into_inner() {
+        match crate::widgets::market::save_search(w.cfg, &name, &url) {
+            Ok(()) => w.save_requested = true,
+            Err(e) => tracing::warn!("couldn't save search: {e}"),
+        }
     }
     if let Some(s) = &mut st.session {
         s.after_frame(w.services);
