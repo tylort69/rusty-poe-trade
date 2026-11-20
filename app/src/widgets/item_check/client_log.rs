@@ -47,6 +47,7 @@ pub struct TradeRequest {
     pub item: TradeItem,
     pub price: TradePrice,
     pub tab: Option<TradeTab>,
+    pub league: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,41 +126,53 @@ pub fn handle_line(line: &str, language: &str) -> Option<LogEntry> {
     let group = |n: &str| caps.name(n).map(|m| m.as_str().to_owned());
     let mut entry = LogEntry { channel, guild_tag: group("guild_tag"), char_name: group("char_name"), body: group("body").unwrap_or_default(), trade: None };
 
-    if channel == MessageChannel::WhisperFrom {
-        if let Some(m) = trade_whisper(language).and_then(|re| re.captures(&entry.body)) {
-            let (p_amount, p_tag) = split_amount(m.name("price").map(|x| x.as_str()).unwrap_or(""));
-            let mut item_name = m.name("item").map(|x| x.as_str().to_owned()).unwrap_or_default();
-            let gem = cs.CHAT_WEBTRADE_GEM.captures(&item_name).map(|g| {
-                let gem = TradeGem {
-                    level: g.name("gem_lvl").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
-                    quality: g.name("gem_qual").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
-                };
-                (g.name("gem_name").map(|x| x.as_str().to_owned()).unwrap_or_default(), gem)
-            });
-            let gem = gem.map(|(name, g)| {
-                item_name = name;
-                g
-            });
-            entry.trade = Some(TradeRequest {
-                item: TradeItem { name: item_name, amount: None, gem },
-                price: TradePrice { amount: js_number(p_amount), name: p_tag.to_owned() },
-                tab: Some(TradeTab {
-                    name: m.name("tab_name").map(|x| x.as_str().to_owned()).unwrap_or_default(),
-                    top: m.name("tab_top").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
-                    left: m.name("tab_left").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
-                }),
-            });
-        } else if let Some(m) = trade_bulk_whisper(language).and_then(|re| re.captures(&entry.body)) {
-            let (p_amount, p_name) = split_amount(m.name("price").map(|x| x.as_str()).unwrap_or(""));
-            let (i_amount, i_name) = split_amount(m.name("item").map(|x| x.as_str()).unwrap_or(""));
-            entry.trade = Some(TradeRequest {
-                item: TradeItem { name: i_name.to_owned(), amount: Some(js_number(i_amount)), gem: None },
-                price: TradePrice { amount: js_number(p_amount), name: p_name.to_owned() },
-                tab: None,
-            });
-        }
+    if matches!(channel, MessageChannel::WhisperFrom | MessageChannel::WhisperTo) {
+        entry.trade = parse_trade(&entry.body, language);
     }
     Some(entry)
+}
+
+/// Parse a trade-site whisper body (single item or bulk). Used for both
+/// incoming (`@From`) and outgoing (`@To`) whispers.
+pub fn parse_trade(body: &str, language: &str) -> Option<TradeRequest> {
+    let cs = &rpt_data::data().client_strings;
+    let league = |m: &regex::Captures<'_>| m.name("league").map(|x| x.as_str().to_owned()).unwrap_or_default();
+    if let Some(m) = trade_whisper(language).and_then(|re| re.captures(body)) {
+        let (p_amount, p_tag) = split_amount(m.name("price").map(|x| x.as_str()).unwrap_or(""));
+        let mut item_name = m.name("item").map(|x| x.as_str().to_owned()).unwrap_or_default();
+        let gem = cs.CHAT_WEBTRADE_GEM.captures(&item_name).map(|g| {
+            let gem = TradeGem {
+                level: g.name("gem_lvl").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
+                quality: g.name("gem_qual").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
+            };
+            (g.name("gem_name").map(|x| x.as_str().to_owned()).unwrap_or_default(), gem)
+        });
+        let gem = gem.map(|(name, g)| {
+            item_name = name;
+            g
+        });
+        Some(TradeRequest {
+            item: TradeItem { name: item_name, amount: None, gem },
+            price: TradePrice { amount: js_number(p_amount), name: p_tag.to_owned() },
+            tab: Some(TradeTab {
+                name: m.name("tab_name").map(|x| x.as_str().to_owned()).unwrap_or_default(),
+                top: m.name("tab_top").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
+                left: m.name("tab_left").and_then(|x| x.as_str().parse().ok()).unwrap_or(0),
+            }),
+            league: league(&m),
+        })
+    } else if let Some(m) = trade_bulk_whisper(language).and_then(|re| re.captures(body)) {
+        let (p_amount, p_name) = split_amount(m.name("price").map(|x| x.as_str()).unwrap_or(""));
+        let (i_amount, i_name) = split_amount(m.name("item").map(|x| x.as_str()).unwrap_or(""));
+        Some(TradeRequest {
+            item: TradeItem { name: i_name.to_owned(), amount: Some(js_number(i_amount)), gem: None },
+            price: TradePrice { amount: js_number(p_amount), name: p_name.to_owned() },
+            tab: None,
+            league: league(&m),
+        })
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
