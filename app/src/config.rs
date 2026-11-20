@@ -372,6 +372,21 @@ pub struct PriceCheckWidget {
     pub request_price_prediction: bool,
     #[serde(default)]
     pub builtin_browser: bool,
+    /// Hold hotkey: search every item automatically, not only easy ones.
+    #[serde(default)]
+    pub smart_initial_always: bool,
+    /// Locked hotkey: search every item automatically, not only easy ones.
+    #[serde(default)]
+    pub locked_initial_always: bool,
+    /// Include offline sellers by default.
+    #[serde(default)]
+    pub default_offline: bool,
+    /// Default "listed within" filter (None = any time).
+    #[serde(default)]
+    pub default_listed: Option<String>,
+    /// Fill both min and max of a mod's range.
+    #[serde(default)]
+    pub fill_roll_max: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -490,6 +505,11 @@ impl Default for Config {
                 show_cursor: true,
                 request_price_prediction: false,
                 builtin_browser: false,
+                smart_initial_always: false,
+                locked_initial_always: false,
+                default_offline: false,
+                default_listed: None,
+                fill_roll_max: false,
                 extra: Map::new(),
             }))),
             w("", "hide", excl(), &["hide-on-blur", "menu::skip"], WidgetKind::ItemCheck(ItemCheckWidget {

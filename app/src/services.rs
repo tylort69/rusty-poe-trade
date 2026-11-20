@@ -176,6 +176,11 @@ pub fn price_check_options(pc: &PriceCheckWidget) -> PriceCheckOptions {
         default_currency: pc.default_currency.clone(),
         request_price_prediction: pc.request_price_prediction,
         builtin_browser: pc.builtin_browser,
+        smart_initial_always: pc.smart_initial_always,
+        locked_initial_always: pc.locked_initial_always,
+        default_offline: pc.default_offline,
+        default_listed: pc.default_listed.clone(),
+        fill_roll_max: pc.fill_roll_max,
     }
 }
 

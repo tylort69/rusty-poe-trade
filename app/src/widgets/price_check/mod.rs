@@ -10,6 +10,7 @@
 mod checked;
 mod extras;
 mod filters;
+pub mod options;
 pub mod position;
 mod session;
 mod trade;
@@ -99,6 +100,10 @@ pub struct PriceCheckState {
     last_do_search: Option<bool>,
     travel_task: Option<crate::services::Task<Result<(), String>>>,
     travel_msg: Option<(String, bool)>,
+    /// The cog's options panel is showing instead of the results.
+    show_options: bool,
+    /// Options were edited while the panel was open: re-run on close.
+    options_changed: bool,
 }
 
 /// Parse the clipboard like `PriceCheckWindow.vue` (sentinels are unsupported).
@@ -150,6 +155,8 @@ pub fn on_item_text(w: &mut WCtx<'_>, st: &mut PriceCheckState, ev: &HostEvent) 
     st.check_position = local;
     st.side = position::click_side(local, w.screen);
     st.advanced_check = *focus_overlay;
+    st.show_options = false;
+    st.options_changed = false;
     let parsed = parse_item(clipboard);
     if parsed.is_ok() {
         w.services.queue_prices_fetch();
@@ -258,6 +265,10 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
 
     let mut close = false;
     let mut open_settings = false;
+    let mut open_full_settings = false;
+    let mut edit = pc.clone();
+    let mut toggle_options = false;
+    let show_options = st.show_options;
     let mut identified: Option<ParsedItem> = None;
     let league_title = w.services.leagues.selected_id();
 
@@ -287,6 +298,11 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
                                 if ui.add(IconButton::new(icons::CLOSE).size(36.0)).clicked() {
                                     close = true;
                                 }
+                                let (icon, tip) = if show_options { (icons::CHECK, "Done: back to the results") } else { (icons::SETTINGS, "Price check options") };
+                                let cog = IconButton::new(icon).size(36.0).selected(show_options).tooltip(tip);
+                                if ui.add(cog).clicked() {
+                                    toggle_options = true;
+                                }
                                 match w.services.prices.xchg_rate() {
                                     Some(rate) => {
                                         let cost = rate.round();
@@ -315,6 +331,23 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
                     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                         Frame::new().inner_margin(Margin { left: 16, right: 16, top: 4, bottom: 16 }).show(ui, |ui| {
                             ui.set_width(ui.available_width());
+                            if show_options {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("Price check options").font(th.font(TypeRole::TitleLarge)).color(c.on_surface));
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        if ui.add(rpt_m3::Button::text("League & all settings").icon(icons::OPEN_IN_NEW).small()).clicked() {
+                                            open_full_settings = true;
+                                        }
+                                    });
+                                });
+                                ui.add(egui::Label::new(
+                                    RichText::new("Changes are saved right away and used for the next item you check. Press ✓ to go back; the current item is searched again with the new options.")
+                                        .font(th.font(TypeRole::BodySmall))
+                                        .color(c.on_surface_variant),
+                                ).wrap());
+                                options::options(ui, &mut edit, w.i18n);
+                                return;
+                            }
                             extras::background_info(ui, &env);
                             match &st.item {
                                 Some(Err(e)) => {
@@ -374,6 +407,24 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
                 w.save_requested = true;
             }
         }
+    }
+
+    if edit != pc {
+        if let Some(p) = price_check_mut(w.cfg) {
+            *p = edit;
+            w.save_requested = true;
+            st.options_changed = true;
+        }
+    }
+    if toggle_options {
+        st.show_options = !st.show_options;
+        if !st.show_options && std::mem::take(&mut st.options_changed) {
+            // rebuild the filters for the current item from the new defaults
+            st.item_gen += 1;
+        }
+    }
+    if open_full_settings {
+        open_league_selection(w, wm_id);
     }
 
     for cmd in env.commands.into_inner() {

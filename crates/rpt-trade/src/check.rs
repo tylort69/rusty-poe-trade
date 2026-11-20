@@ -27,7 +27,7 @@ pub fn presets_for_item(
         }
         _ => w.default_currency.clone(),
     };
-    create_presets(
+    let mut presets = create_presets(
         item,
         &CreatePresetsOptions {
             league: league_id.to_owned(),
@@ -38,7 +38,36 @@ pub fn presets_for_item(
             use_en: config.use_intl_site,
             currency,
         },
-    )
+    );
+    apply_defaults(&mut presets, w);
+    presets
+}
+
+/// Widget defaults the preset builders don't know about.
+fn apply_defaults(presets: &mut Presets, w: &crate::client::PriceCheckOptions) {
+    use crate::filters::{FilterOrGroup, StatFilter};
+    fn fill_max(f: &mut StatFilter) {
+        if let Some(r) = &mut f.roll {
+            r.min.get_or_insert(r.default.min);
+            r.max.get_or_insert(r.default.max);
+        }
+    }
+    for p in &mut presets.presets {
+        if w.default_offline {
+            p.filters.trade.offline = true;
+        }
+        if let Some(listed) = &w.default_listed {
+            p.filters.trade.listed = Some(listed.clone());
+        }
+        if w.fill_roll_max {
+            for s in &mut p.stats {
+                match s {
+                    FilterOrGroup::Stat(f) => fill_max(f),
+                    FilterOrGroup::Group(g) => g.stats.iter_mut().for_each(fill_max),
+                }
+            }
+        }
+    }
 }
 
 /// Whether to start searching immediately (`doSearch` initial value).
@@ -46,6 +75,9 @@ pub fn initial_do_search(item: &ParsedItem, presets: &Presets, advanced_check: b
     let w = &config.price_check;
     if (!advanced_check && !w.smart_initial_search) || (advanced_check && !w.locked_initial_search) {
         return false;
+    }
+    if (!advanced_check && w.smart_initial_always) || (advanced_check && w.locked_initial_always) {
+        return true;
     }
     item.rarity == Some(ItemRarity::Unique)
         || presets.active == crate::filters::create_presets::PRESET_BULK

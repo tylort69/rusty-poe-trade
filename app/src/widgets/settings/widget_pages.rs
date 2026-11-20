@@ -5,8 +5,8 @@ use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, S
 use rpt_m3::{Button, CardKind, Chip, IconButton, TypeRole, icons, shape, theme, with_alpha};
 
 use super::hotkey::{hotkey_input, hotkey_row};
-use super::{SettingsState, field_label, leagues, switch_setting};
-use crate::config::{MapCheckStat, ShowSeller, StashSearchEntry, WidgetKind};
+use super::{SettingsState, field_label, leagues};
+use crate::config::{MapCheckStat, StashSearchEntry, WidgetKind};
 use crate::widgets::WCtx;
 
 // ---------------------------------------------------------------------------
@@ -77,86 +77,7 @@ pub fn price_check(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
         return;
     };
 
-    rpt_m3::section_header(ui, i18n.t("price_check.show_seller"));
-    let mut seller = match &pc.show_seller {
-        ShowSeller::Mode(m) => m.clone(),
-        ShowSeller::Off(_) => String::new(),
-    };
-    let (no, acc, ign) = (i18n.t("No"), i18n.t("settings.account_name"), i18n.t("settings.last_char_name"));
-    if rpt_m3::segmented(ui, &mut seller, &[(String::new(), no.as_str()), ("account".into(), acc.as_str()), ("ign".into(), ign.as_str())]) {
-        pc.show_seller = if seller.is_empty() { ShowSeller::Off(false) } else { ShowSeller::Mode(seller) };
-    }
-    ui.label(RichText::new(i18n.t("price_check.highlight_hint")).italics().color(c.on_surface_variant));
-
-    rpt_m3::setting_row(ui, None, &i18n.t("price_check.fill_rolls"), None, |ui| {
-        let exact = pc.search_stat_range == 0.0;
-        if ui.add(Chip::filter(i18n.t("price_check.fill_roll_exact"), exact)).clicked() && !exact {
-            pc.search_stat_range = 0.0;
-        }
-        rpt_m3::number_field(ui, &mut pc.search_stat_range, 0.0..=50.0, 0.2, 0, " %");
-        ui.label("±");
-    });
-    switch_setting(ui, &i18n.t("price_check.select_stock"), None, &mut pc.activate_stock_filter);
-    switch_setting(ui, &i18n.t("price_check.show_prediction"), Some("www.poeprices.info"), &mut pc.request_price_prediction);
-    switch_setting(ui, &i18n.t("price_check.cursor_pos"), None, &mut pc.show_cursor);
-
-    // --- Default trade filters (upstream OnlineFilterCore in "settings" context)
-    ui.add_space(8.0);
-    rpt_m3::card(ui, CardKind::Outlined).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(RichText::new(i18n.t("price_check.default_settings")).font(th.font(TypeRole::TitleSmall)).color(c.on_surface));
-        switch_setting(ui, &i18n.t("online_filter.merchant_toggle"), None, &mut pc.merchant_only);
-        ui.horizontal_wrapped(|ui| {
-            let opts: [(Option<&str>, &str); 4] = [
-                (None, "online_filter.currency_any"),
-                (Some("chaos"), "online_filter.currency_only_chaos"),
-                (Some("divine"), "online_filter.currency_only_div"),
-                (Some("chaos_divine"), "online_filter.currency_chaos_div"),
-            ];
-            for (v, key) in opts {
-                let v = v.map(str::to_owned);
-                let sel = pc.default_currency == v;
-                if ui.add(Chip::filter(i18n.t(key), sel)).clicked() {
-                    pc.default_currency = v;
-                }
-            }
-        });
-    });
-
-    // --- Builtin browser
-    ui.add_space(8.0);
-    switch_setting(ui, &i18n.t("price_check.enable_browser"), None, &mut pc.builtin_browser);
-    if pc.builtin_browser {
-        rpt_m3::banner(ui, icons::WARNING, i18n.t("price_check.builtin_browser_warning"), true);
-    }
-
-    // --- Expensive options
-    ui.add_space(8.0);
-    rpt_m3::card(ui, CardKind::Outlined).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        rpt_m3::banner(ui, icons::WARNING_AMBER, i18n.t("price_check.warn_expensive"), false);
-        let mut accurate = pc.collapse_listings == "app";
-        if switch_setting(ui, &i18n.t("price_check.accurate_collapsed"), None, &mut accurate) {
-            pc.collapse_listings = if accurate { "app" } else { "api" }.into();
-        }
-        field_label(ui, &i18n.t("price_check.auto_search"));
-        ui.horizontal_wrapped(|ui| {
-            if let Some(k) = &pc.hotkey {
-                rpt_m3::switch(ui, &mut pc.smart_initial_search);
-                rpt_m3::key_cap(ui, &format!("{} + {}", pc.hotkey_hold, k));
-                ui.add_space(16.0);
-            }
-            if let Some(k) = pc.hotkey_locked.clone() {
-                rpt_m3::switch(ui, &mut pc.locked_initial_search);
-                rpt_m3::key_cap(ui, &k);
-            }
-        });
-        let label = i18n.t("price_check.extra_delay");
-        let secs = i18n.t("seconds");
-        rpt_m3::setting_row(ui, None, &label, None, |ui| {
-            rpt_m3::number_field(ui, &mut pc.api_latency_seconds, 0.5..=10.0, 0.05, 1, &format!(" {secs}"));
-        });
-    });
+    crate::widgets::price_check::options::options(ui, pc, i18n);
 }
 
 // ---------------------------------------------------------------------------

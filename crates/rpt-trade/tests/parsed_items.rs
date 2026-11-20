@@ -63,3 +63,26 @@ fn rare_helmet_from_clipboard() {
     // ES property filter (single-attribute armour → enabled)
     assert!(req["query"]["filters"]["armour_filters"]["filters"]["es"]["min"].is_number(), "{req:#}");
 }
+
+#[test]
+fn widget_defaults_apply_to_presets() {
+    use rpt_trade::client::TradeConfig;
+    rpt_data::init("en").unwrap();
+    let item = rpt_parser::parse_clipboard(RARE_HELMET).unwrap();
+    let mut cfg = TradeConfig::default();
+    cfg.price_check.default_offline = true;
+    cfg.price_check.default_listed = Some("3days".into());
+    cfg.price_check.fill_roll_max = true;
+    let presets = rpt_trade::check::presets_for_item(&item, None, &cfg, "Standard");
+    let p = presets.active_preset().unwrap();
+    let req = serde_json::to_value(create_trade_request(&p.filters, &p.stats).unwrap()).unwrap();
+    assert_eq!(req["query"]["status"]["option"], "any", "{req:#}");
+    assert_eq!(req["query"]["filters"]["trade_filters"]["filters"]["indexed"]["option"], "3days", "{req:#}");
+    let es = &req["query"]["filters"]["armour_filters"]["filters"]["es"];
+    assert!(es["min"].is_number() && es["max"].is_number(), "{req:#}");
+
+    // "Every item" auto-search for the locked hotkey
+    cfg.price_check.locked_initial_always = true;
+    assert!(rpt_trade::check::initial_do_search(&item, &presets, true, &cfg));
+    assert!(!rpt_trade::check::initial_do_search(&item, &presets, false, &cfg));
+}

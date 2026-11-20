@@ -92,6 +92,18 @@ pub struct PriceCheckOptions {
     pub default_currency: Option<String>,
     pub request_price_prediction: bool,
     pub builtin_browser: bool,
+    /// Search automatically for every item opened with the hold hotkey, not
+    /// just the easy-to-price ones (uniques, bulk items, …).
+    pub smart_initial_always: bool,
+    /// Same, for the locked (stay-open) hotkey.
+    pub locked_initial_always: bool,
+    /// Include offline sellers by default.
+    pub default_offline: bool,
+    /// Default "listed within" (`1day`, `3days`, `1week`, `2weeks`, `1month`, `2months`).
+    pub default_listed: Option<String>,
+    /// Fill both ends of a mod's range (min and max), not only the side that
+    /// makes the item better.
+    pub fill_roll_max: bool,
 }
 
 impl Default for PriceCheckOptions {
@@ -110,6 +122,11 @@ impl Default for PriceCheckOptions {
             default_currency: None,
             request_price_prediction: false,
             builtin_browser: false,
+            smart_initial_always: false,
+            locked_initial_always: false,
+            default_offline: false,
+            default_listed: None,
+            fill_roll_max: false,
         }
     }
 }
