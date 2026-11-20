@@ -28,6 +28,9 @@ pub(crate) enum WindowEvent {
     Attached { has_access: bool },
     Detached,
     Foreground { game: bool },
+    /// The game was activated again while it already counted as focused
+    /// (e.g. after focus went to a window the tracker ignores). Linux only.
+    GameReactivated,
     Bounds(Option<Rect>),
 }
 

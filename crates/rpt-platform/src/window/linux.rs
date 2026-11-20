@@ -169,6 +169,10 @@ impl Tracker {
         let res = (|| -> anyhow::Result<bool> {
             let attrs = conn.get_window_attributes(win)?.reply()?;
             if attrs.override_redirect {
+                // Raise above the game too: the compositor restacks the game
+                // when it re-activates it.
+                let raise = x11rb::protocol::xproto::ConfigureWindowAux::new().stack_mode(x11rb::protocol::xproto::StackMode::ABOVE);
+                conn.configure_window(win, &raise)?.check()?;
                 conn.set_input_focus(InputFocus::PARENT, win, x11rb::CURRENT_TIME)?.check()?;
                 return Ok(true);
             }
@@ -410,6 +414,8 @@ impl Loop {
         if fg != self.fg {
             self.fg = fg;
             (self.sink)(WindowEvent::Foreground { game: fg });
+        } else if fg {
+            (self.sink)(WindowEvent::GameReactivated);
         }
     }
 

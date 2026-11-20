@@ -304,6 +304,14 @@ impl Core {
         }
     }
 
+    fn refocus_overlay(&self) {
+        tracing::info!("game re-activated while the overlay is open: giving input back to the overlay");
+        if let Some(t) = &self.sys.tracker
+            && !t.focus_overlay() {
+                tracing::debug!("could not re-focus the overlay window");
+            }
+    }
+
     fn assert_game_active(&mut self) {
         if self.interactable {
             self.interactable = false;
@@ -339,7 +347,20 @@ impl Core {
             WindowEvent::Foreground { game } => {
                 self.game_foreground = game;
                 self.emit_game_window();
+                if game && self.interactable && cfg!(target_os = "linux") {
+                    // Back to the game while the overlay is open: the window
+                    // manager handed input to the game, but the overlay is still
+                    // shown on top. Keep it usable instead of leaving an open,
+                    // click-through overlay. (Esc / overlay key return to the game.)
+                    self.refocus_overlay();
+                    return;
+                }
                 self.set_game_active(game);
+            }
+            WindowEvent::GameReactivated => {
+                if self.interactable {
+                    self.refocus_overlay();
+                }
             }
             WindowEvent::Bounds(b) => {
                 self.bounds = b;
