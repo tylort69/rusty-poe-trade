@@ -81,14 +81,13 @@ impl StashClient {
         match self.credentials().ok_or(StashError::NotSignedIn)? {
             Credentials::Session { poesessid, account_name } => {
                 let typed = account_name.trim().to_owned();
-                // The account-name endpoint both validates the cookie and
-                // returns the authoritative `Name#1234`. If GGG ever removes
-                // it, fall back to the name the user typed (checked on first stash fetch).
-                let name = match self.legacy_account_name().await {
-                    Ok(n) => n,
-                    Err(StashError::Status { status: 404, .. } | StashError::AccountNameUnknown) if !typed.is_empty() => typed,
-                    Err(e) => return Err(e),
-                };
+                // `/my-account` validates the cookie (401 when it's invalid or
+                // expired). The old `character-window/get-account-name`
+                // endpoint is gone (404). The account name is read from the
+                // page if possible, else the typed one is kept; it's only
+                // needed for the legacy stash API, not for trade actions.
+                let found = self.session_check().await?;
+                let name = found.unwrap_or(typed);
                 *self.creds.write() = Some(Credentials::Session { poesessid, account_name: name.clone() });
                 Ok(AccountInfo { name, method: AuthMethod::SessionCookie })
             }
@@ -148,14 +147,11 @@ impl StashClient {
         check(resp).await
     }
 
-    async fn legacy_account_name(&self) -> Result<String> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct R {
-            account_name: Option<String>,
-        }
-        let r: R = self.legacy_get("/character-window/get-account-name").await?.json().await?;
-        r.account_name.filter(|s| !s.is_empty()).ok_or(StashError::AccountNameUnknown)
+    /// GET `/my-account` with the cookie: `Ok(Some(name))` / `Ok(None)` when
+    /// the cookie is valid, `Err(Unauthorized)` when it isn't.
+    async fn session_check(&self) -> Result<Option<String>> {
+        let html = self.legacy_get("/my-account").await?.text().await?;
+        Ok(account_name_from_html(&html))
     }
 
     async fn legacy_stash(&self, league: &str, tab_index: u32, with_tabs: bool) -> Result<LegacyStashResponse> {
@@ -233,6 +229,41 @@ impl StashClient {
     }
 }
 
+/// Find the account name in a pathofexile.com page via its profile link
+/// (`/account/view-profile/Name-1234` → `Name#1234`).
+fn account_name_from_html(html: &str) -> Option<String> {
+    const MARK: &str = "/account/view-profile/";
+    let start = html.find(MARK)? + MARK.len();
+    let raw: String = html[start..].chars().take_while(|c| !matches!(c, '"' | '\'' | '?' | '/' | '<' | '>' | '#') && !c.is_whitespace()).collect();
+    let decoded = percent_decode(&raw);
+    if decoded.is_empty() {
+        return None;
+    }
+    // New-style names carry a 4-digit discriminator, written `-1234` in URLs.
+    Some(match decoded.rsplit_once('-') {
+        Some((n, d)) if d.len() == 4 && d.chars().all(|c| c.is_ascii_digit()) && !n.is_empty() => format!("{n}#{d}"),
+        _ => decoded,
+    })
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn enc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -266,6 +297,14 @@ async fn check(resp: Response) -> Result<Response> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_name_from_profile_link() {
+        let html = r#"<a href="/account/view-profile/Some%20Name-1234/characters">x</a>"#;
+        assert_eq!(account_name_from_html(html).as_deref(), Some("Some Name#1234"));
+        assert_eq!(account_name_from_html(r#"<a href="/account/view-profile/oldname">"#).as_deref(), Some("oldname"));
+        assert_eq!(account_name_from_html("<html>nothing</html>"), None);
+    }
 
     #[test]
     fn encodes_discriminator() {

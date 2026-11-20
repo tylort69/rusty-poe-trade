@@ -385,7 +385,10 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut PriceCheckState, wm_id: u3
                 w.host.push(HostCommand::FocusGame);
                 ("Travelling to the seller's hideout. The item is highlighted in their stash.".into(), false)
             }
-            Err(e) => (format!("Couldn't travel: {e}"), true),
+            Err(e) => {
+                tracing::warn!("travel to hideout failed: {e}");
+                (format!("Couldn't travel: {e}"), true)
+            }
         });
     }
     for (name, url) in env.saved_searches.into_inner() {

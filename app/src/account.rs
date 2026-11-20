@@ -131,10 +131,12 @@ impl Account {
     async fn finish_verify(client: &StashClient, state: &Mutex<AccountState>, ctx: &egui::Context) -> bool {
         match client.verify().await {
             Ok(info) => {
+                tracing::info!("signed in ({:?})", info.method);
                 Self::set_status(state, ctx, Status::SignedIn(info));
                 true
             }
             Err(e) => {
+                tracing::warn!("sign-in check failed: {e}");
                 if matches!(e, StashError::Unauthorized | StashError::Forbidden(_)) {
                     client.set_credentials(None);
                 }

@@ -26,7 +26,7 @@ pub fn page(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
 
     // Pick up the authoritative account name after sign-in.
     if let Status::SignedIn(info) = &state.status {
-        if w.cfg.account_name != info.name {
+        if !info.name.is_empty() && w.cfg.account_name != info.name {
             w.cfg.account_name = info.name.clone();
             w.save_requested = true;
         }
@@ -39,7 +39,12 @@ pub fn page(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut SettingsState) {
             let (icon, color, headline, support) = match &state.status {
                 Status::SignedOut => (icons::ACCOUNT_CIRCLE, c.on_surface_variant, "Not signed in".to_owned(), None),
                 Status::Working(msg) => (icons::ACCOUNT_CIRCLE, c.primary, msg.clone(), None),
-                Status::SignedIn(i) => (icons::CHECK_CIRCLE, c.primary, format!("Signed in as {}", i.name), Some(i.method.label().to_owned())),
+                Status::SignedIn(i) => (
+                    icons::CHECK_CIRCLE,
+                    c.primary,
+                    if i.name.is_empty() { "Signed in".to_owned() } else { format!("Signed in as {}", i.name) },
+                    Some(i.method.label().to_owned()),
+                ),
                 Status::Failed(e) => (icons::ERROR, c.error, "Sign-in failed".to_owned(), Some(e.clone())),
             };
             ui.label(rpt_m3::icon_text(icon, 32.0).color(color));
