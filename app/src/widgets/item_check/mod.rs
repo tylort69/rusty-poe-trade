@@ -2,6 +2,7 @@
 //! hotkeyable actions), `map-check/*` and `client-log/client-log.ts`.
 
 pub mod client_log;
+pub mod inspect;
 pub mod map_check;
 
 use egui::{Area, Context, CornerRadius, Frame, Id, Margin, Order, Pos2, RichText, vec2};
@@ -86,7 +87,8 @@ pub fn on_item_text(w: &mut WCtx<'_>, st: &mut ItemCheckState, ev: &HostEvent) {
             let ctx = w.services.ctx().clone();
             let ppp = ctx.pixels_per_point();
             let origin = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)).map(|r| r.min).unwrap_or(Pos2::ZERO);
-            st.check_position = Pos2::new(position.x / ppp, position.y / ppp) - origin.to_vec2();
+            // ppp includes the overlay zoom; `origin` is in points of this same pass.
+            st.check_position = crate::platform_glue::coords::screen_to_local(*position, origin, ppp);
             st.item = rpt_parser::parse_clipboard(clipboard).ok();
             if st.item.is_some() {
                 if let Some(id) = wm::id_of(w.cfg, "item-check") {
@@ -203,6 +205,11 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut ItemCheckState, wm_id: u32
                             });
                         });
                     }
+                    let ins = inspect::inspect(&item);
+                    if !ins.is_empty() {
+                        ui.add_space(8.0);
+                        inspect::show(ui, &ins, (screen.height() * 0.6 - 160.0).max(160.0));
+                    }
                 });
         });
     if let Some(a) = action {
@@ -244,6 +251,39 @@ mod tests {
         assert_eq!(similar_search(&it), "\"Berek's Grip\"");
         assert!(!is_map_like(&it));
         assert_eq!(format_thousands(1234.0), "1,234");
+    }
+
+    /// Headless render of the whole item-check window (incl. the inspect card),
+    /// on a 16:9 and a 32:9 screen at zoom 1 and 2 (smaller point space).
+    #[test]
+    fn window_renders_headless() {
+        let text = "Item Class: Body Armours\nRarity: Rare\nCarrion Shell\nGlorious Plate\n--------\nItem Level: 86\n--------\n\
+{ Prefix Modifier \"Hale\" (Tier: 8) — Life }\n+29(25-29) to maximum Life\n\
+{ Suffix Modifier \"of the Volcano\" (Tier: 3) — Elemental, Fire, Resistance }\n+40(36-41)% to Fire Resistance\n\
+{ Master Crafted Suffix Modifier \"of Craft\" (Rank: 2) — Elemental, Cold, Resistance }\n+24(21-28)% to Cold Resistance\n";
+        let it = item(text);
+        let ctx = Context::default();
+        rpt_m3::install_fonts(&ctx, vec![]);
+        rpt_m3::install(&ctx, rpt_m3::M3Theme::resolve(rpt_m3::ThemeSettings::default()));
+        let data = rpt_data::data();
+        let i18n = crate::i18n::I18n::new(&data);
+        let mut cfg = crate::config::Config::default();
+        let services = crate::services::Services::new(&cfg, ctx.clone());
+        let mut host = crate::host::HostQueue::default();
+        let id = wm::id_of(&cfg, "item-check").unwrap();
+        for (w, h, zoom) in [(2560.0, 1440.0, 1.0), (5120.0, 1440.0, 2.0)] {
+            let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(w, h) / zoom);
+            let mut st = ItemCheckState { item: Some(it.clone()), check_position: Pos2::new(screen.right() - 10.0, 300.0), log: Vec::new() };
+            for _ in 0..2 {
+                let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let mut wc = WCtx { cfg: &mut cfg, st: crate::wm::OverlayState { active: true, ..Default::default() }, i18n: &i18n, host: &mut host, services: &services, screen, save_requested: false };
+                    show(ui.ctx(), &mut wc, &mut st, id);
+                });
+                out.textures_delta.clear();
+            }
+        }
+        assert_eq!(inspect::inspect(&it).rows.len(), 3);
     }
 
     #[test]

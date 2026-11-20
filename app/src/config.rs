@@ -62,6 +62,26 @@ pub struct RptSettings {
     pub contrast: f64,
     pub check_for_updates: bool,
     pub account: AccountSettings,
+    /// Overlay zoom (egui zoom factor), 0.5–3.0. Scales everything, unlike `fontSize`
+    /// which only scales text. Read through [`RptSettings::zoom`].
+    pub overlay_zoom: f32,
+    /// Where anchored widgets live on wide screens:
+    /// [`WIDGET_AREA_AUTO`] | [`WIDGET_AREA_FULL`] | [`WIDGET_AREA_CENTER`].
+    pub widget_area: String,
+}
+
+pub const ZOOM_MIN: f32 = 0.5;
+pub const ZOOM_MAX: f32 = 3.0;
+/// Centered 16:9 region when the game is wider than 16:9, else the full game.
+pub const WIDGET_AREA_AUTO: &str = "auto";
+/// Always the full game client area (pre-zoom behaviour).
+pub const WIDGET_AREA_FULL: &str = "full";
+/// Always a centered 16:9 region on anything wider than 16:9.
+pub const WIDGET_AREA_CENTER: &str = "center-16:9";
+
+/// Clamp a zoom value to the supported range (non-finite → 1.0).
+pub fn clamp_zoom(z: f32) -> f32 {
+    if z.is_finite() { z.clamp(ZOOM_MIN, ZOOM_MAX) } else { 1.0 }
 }
 
 /// Path of Exile sign-in. Secrets are never stored here, only in the OS keychain.
@@ -97,11 +117,18 @@ impl Default for RptSettings {
             contrast: 0.0,
             check_for_updates: true,
             account: AccountSettings::default(),
+            overlay_zoom: 1.0,
+            widget_area: WIDGET_AREA_AUTO.into(),
         }
     }
 }
 
 impl RptSettings {
+    /// The effective overlay zoom (clamped to 50–300 %).
+    pub fn zoom(&self) -> f32 {
+        clamp_zoom(self.overlay_zoom)
+    }
+
     pub fn theme_settings(&self, font_size: f32) -> rpt_m3::ThemeSettings {
         use rpt_m3::{Brightness, SchemeVariant, SeedSource};
         let seed = parse_hex(&self.seed_color).map(SeedSource::Custom).unwrap_or(SeedSource::System);
@@ -717,5 +744,21 @@ mod tests {
         v["someFutureKey"] = Value::from(42);
         let c = Config::from_json(&v.to_string()).unwrap();
         assert!(c.to_json().contains("someFutureKey"));
+    }
+
+    #[test]
+    fn rpt_zoom_and_area_defaults() {
+        let r = RptSettings::default();
+        assert_eq!(r.zoom(), 1.0);
+        assert_eq!(r.widget_area, WIDGET_AREA_AUTO);
+        // configs written before these keys existed still load with defaults
+        let old: RptSettings = serde_json::from_str(r#"{"seedColor":"system"}"#).unwrap();
+        assert_eq!(old.overlay_zoom, 1.0);
+        assert_eq!(old.widget_area, WIDGET_AREA_AUTO);
+        let j = serde_json::to_string(&RptSettings { overlay_zoom: 1.5, ..RptSettings::default() }).unwrap();
+        assert!(j.contains("\"overlayZoom\":1.5") && j.contains("\"widgetArea\":\"auto\""));
+        assert_eq!(RptSettings { overlay_zoom: 9.0, ..RptSettings::default() }.zoom(), 3.0);
+        assert_eq!(clamp_zoom(0.1), 0.5);
+        assert_eq!(clamp_zoom(f32::NAN), 1.0);
     }
 }

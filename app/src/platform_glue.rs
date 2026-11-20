@@ -141,14 +141,9 @@ impl PlatformGlue {
         }
     }
 
-    /// Game client area in egui points.
-    pub fn game_rect(&self, pixels_per_point: f32) -> Option<egui::Rect> {
-        self.game.lock().map(|r| {
-            egui::Rect::from_min_size(
-                egui::pos2(r.x as f32, r.y as f32) / pixels_per_point,
-                egui::vec2(r.width as f32, r.height as f32) / pixels_per_point,
-            )
-        })
+    /// Game client area in physical screen pixels (as reported by the platform).
+    pub fn game_rect_px(&self) -> Option<rpt_platform::Rect> {
+        *self.game.lock()
     }
 
     pub fn set_overlay_active(&self, active: bool) {
@@ -177,13 +172,8 @@ impl PlatformGlue {
             HostCommand::TrackArea { hold_key, close_threshold, from, area, dpr } => p.track_area(rpt_platform::TrackArea {
                 hold_key,
                 close_threshold: close_threshold as f64,
-                from: (from.x as f64 * dpr as f64, from.y as f64 * dpr as f64),
-                area: rpt_platform::AreaRect {
-                    x: area.min.x as f64 * dpr as f64,
-                    y: area.min.y as f64 * dpr as f64,
-                    width: area.width() as f64 * dpr as f64,
-                    height: area.height() as f64 * dpr as f64,
-                },
+                from: coords::pos_to_physical(from, dpr),
+                area: coords::rect_to_physical(area, dpr),
             }),
             HostCommand::CheckForUpdate => p.check_for_update(),
             HostCommand::ToggleOverlay => p.toggle_overlay(),
@@ -192,6 +182,143 @@ impl PlatformGlue {
             }
             HostCommand::Quit => p.quit(),
             HostCommand::SaveConfig | HostCommand::PushHostConfig | HostCommand::OpenUrl(_) => {}
+        }
+    }
+}
+
+/// Physical-pixel ↔ egui-point conversions.
+///
+/// egui points relate to physical pixels by `pixels_per_point`, which egui-winit
+/// computes as `native_pixels_per_point (OS DPI scale) × zoom_factor`. The
+/// overlay zoom therefore changes how many points the game rect spans, so every
+/// conversion uses the *full* ppp (never just the native one) — and the same
+/// ppp egui-winit uses when it applies viewport commands after the pass.
+pub mod coords {
+    use egui::{Pos2, Rect, pos2, vec2};
+
+    /// `pixels_per_point` egui-winit uses for a given OS scale and zoom.
+    pub fn ppp(native_pixels_per_point: f32, zoom: f32) -> f32 {
+        native_pixels_per_point * zoom
+    }
+
+    /// The ppp that this pass's viewport commands (and the next pass) will use
+    /// once `zoom` is applied with `set_zoom_factor`. Falls back to the current
+    /// pass when the OS scale is not known yet.
+    pub fn target_ppp(ctx: &egui::Context, zoom: f32) -> f32 {
+        let native = ctx.native_pixels_per_point().unwrap_or_else(|| ctx.pixels_per_point() / ctx.zoom_factor().max(f32::EPSILON));
+        ppp(native, zoom)
+    }
+
+    /// A physical screen rect (the game client area) in absolute egui points.
+    pub fn rect_to_points(r: rpt_platform::Rect, ppp: f32) -> Rect {
+        Rect::from_min_size(pos2(r.x as f32, r.y as f32) / ppp, vec2(r.width as f32, r.height as f32) / ppp)
+    }
+
+    /// A physical screen position in absolute egui points.
+    pub fn pos_to_points(p: Pos2, ppp: f32) -> Pos2 {
+        pos2(p.x / ppp, p.y / ppp)
+    }
+
+    /// Absolute egui points → physical screen pixels.
+    pub fn pos_to_physical(p: Pos2, ppp: f32) -> (f64, f64) {
+        (p.x as f64 * ppp as f64, p.y as f64 * ppp as f64)
+    }
+
+    /// Absolute egui-point rect → physical screen pixels.
+    pub fn rect_to_physical(r: Rect, ppp: f32) -> rpt_platform::AreaRect {
+        let p = ppp as f64;
+        rpt_platform::AreaRect { x: r.min.x as f64 * p, y: r.min.y as f64 * p, width: r.width() as f64 * p, height: r.height() as f64 * p }
+    }
+
+    /// A physical screen position (cursor from the platform) → overlay-local
+    /// points, given the overlay window's top-left in absolute points.
+    pub fn screen_to_local(p: Pos2, window_origin: Pos2, ppp: f32) -> Pos2 {
+        pos_to_points(p, ppp) - window_origin.to_vec2()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// Physical pixels egui-winit/winit end up requesting for a point value
+        /// (`ppp * points`, rounded to integers by winit).
+        fn applied_px(points: f32, ppp: f32) -> i32 {
+            (points * ppp).round() as i32
+        }
+
+        const DPIS: [f32; 3] = [1.0, 1.5, 2.0];
+        const ZOOMS: [f32; 3] = [0.5, 1.0, 2.0];
+        const GAMES: [rpt_platform::Rect; 3] = [
+            rpt_platform::Rect { x: 0, y: 0, width: 2560, height: 1440 },
+            rpt_platform::Rect { x: 1920, y: 0, width: 3440, height: 1440 },
+            rpt_platform::Rect { x: -1280, y: 37, width: 5120, height: 1441 },
+        ];
+
+        #[test]
+        fn overlay_covers_game_exactly() {
+            for dpi in DPIS {
+                for zoom in ZOOMS {
+                    let ppp = ppp(dpi, zoom);
+                    for g in GAMES {
+                        let r = rect_to_points(g, ppp);
+                        // what egui-winit sends to winit for OuterPosition / InnerSize
+                        assert_eq!(applied_px(r.min.x, ppp), g.x, "dpi {dpi} zoom {zoom}");
+                        assert_eq!(applied_px(r.min.y, ppp), g.y);
+                        assert_eq!(applied_px(r.width(), ppp), g.width);
+                        assert_eq!(applied_px(r.height(), ppp), g.height);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn cursor_and_track_area_round_trip() {
+            for dpi in DPIS {
+                for zoom in ZOOMS {
+                    let ppp = ppp(dpi, zoom);
+                    for g in GAMES {
+                        let game = rect_to_points(g, ppp);
+                        // cursor 100px right / 200px below the game's top-left
+                        let cursor = pos2((g.x + 100) as f32, (g.y + 200) as f32);
+                        let local = screen_to_local(cursor, game.min, ppp);
+                        assert!((local.x - 100.0 / ppp).abs() < 1e-3 && (local.y - 200.0 / ppp).abs() < 1e-3);
+                        // overlay-local → absolute points → physical (TrackArea `from`)
+                        let (x, y) = pos_to_physical(local + game.min.to_vec2(), ppp);
+                        assert!((x - cursor.x as f64).abs() < 0.01 && (y - cursor.y as f64).abs() < 0.01, "dpi {dpi} zoom {zoom}");
+                        // a full-height column 10pt from the left edge (TrackArea `area`)
+                        let area = Rect::from_min_size(pos2(10.0, 0.0), vec2(460.0, game.height())).translate(game.min.to_vec2());
+                        let a = rect_to_physical(area, ppp);
+                        assert!((a.x - (g.x as f64 + 10.0 * ppp as f64)).abs() < 0.01);
+                        assert!((a.y - g.y as f64).abs() < 0.01);
+                        assert!((a.width - 460.0 * ppp as f64).abs() < 0.01);
+                        assert!((a.height - g.height as f64).abs() < 0.01);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn zoom_scales_point_space() {
+            let g = GAMES[0];
+            assert_eq!(rect_to_points(g, ppp(1.0, 1.0)).width(), 2560.0);
+            assert_eq!(rect_to_points(g, ppp(1.0, 2.0)).width(), 1280.0);
+            assert_eq!(rect_to_points(g, ppp(1.0, 0.5)).width(), 5120.0);
+            assert_eq!(rect_to_points(g, ppp(2.0, 1.0)).width(), 1280.0);
+            assert_eq!(rect_to_points(g, ppp(1.5, 2.0)).width(), 2560.0 / 3.0);
+        }
+
+        #[test]
+        fn target_ppp_uses_native_scale() {
+            let ctx = egui::Context::default();
+            // no viewport info yet: derived from the current pass (ppp 1, zoom 1)
+            assert_eq!(target_ppp(&ctx, 2.0), 2.0);
+            let mut input = egui::RawInput::default();
+            input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(1.5);
+            let mut out = ctx.run_ui(input, |ui| {
+                assert_eq!(target_ppp(ui.ctx(), 2.0), 3.0);
+                assert_eq!(target_ppp(ui.ctx(), 0.5), 0.75);
+            });
+            out.textures_delta.clear();
         }
     }
 }
