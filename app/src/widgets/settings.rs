@@ -24,6 +24,7 @@ use crate::host::HostCommand;
 use crate::wm;
 
 const WIDGET_FLAG: &str = "settings::widget=";
+const ACCOUNT_FLAG: &str = "settings::page=account";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -140,6 +141,13 @@ pub fn open_for(cfg: &mut Config, widget_id: u32) {
     wm::show(cfg, sid);
 }
 
+/// Open the full settings window on the Account page (e.g. from a "Sign in" prompt).
+pub fn open_account(cfg: &mut Config) {
+    let Some(sid) = wm::id_of(cfg, "settings") else { return };
+    wm::set_flag(cfg, sid, ACCOUNT_FLAG, true);
+    wm::show(cfg, sid);
+}
+
 /// Everything that requires `PushHostConfig` when it changes.
 fn host_key(cfg: &Config) -> String {
     format!(
@@ -190,6 +198,9 @@ pub fn show(ctx: &Context, w: &mut WCtx<'_>, st: &mut SettingsState, wm_id: u32)
             st.page = menu_by_type(t)[0][0];
             st.snapshot = None;
         }
+    }
+    if wm::set_flag(w.cfg, wm_id, ACCOUNT_FLAG, false) {
+        (st.target, st.page) = (None, Page::Account);
     }
     if st.target.is_some_and(|id| !w.cfg.widgets.iter().any(|x| x.wm_id == id)) {
         st.target = None;

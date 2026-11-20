@@ -1,0 +1,18 @@
+[
+{"id":"c1","name":"","typeLine":"Divine Orb","baseType":"Divine Orb","frameType":5,"stackSize":3,"maxStackSize":10,"identified":true,"ilvl":0,"icon":"x.png"},
+{"id":"f1","name":"","typeLine":"Sacrifice at Dawn","baseType":"Sacrifice at Dawn","frameType":0,"stackSize":1,"maxStackSize":10,"identified":true,"ilvl":0},
+{"id":"d1","name":"","typeLine":"The Doctor","baseType":"The Doctor","frameType":6,"stackSize":2,"maxStackSize":8,"identified":true,"ilvl":0},
+{"id":"e1","name":"","typeLine":"Deafening Essence of Greed","baseType":"Deafening Essence of Greed","frameType":5,"stackSize":4,"maxStackSize":9,"identified":true,"ilvl":0},
+{"id":"s1","name":"","typeLine":"Gilded Ambush Scarab","baseType":"Gilded Ambush Scarab","frameType":0,"stackSize":5,"maxStackSize":20,"identified":true,"ilvl":0},
+{"id":"o1","name":"","typeLine":"Golden Oil","baseType":"Golden Oil","frameType":5,"stackSize":1,"maxStackSize":10,"identified":true,"ilvl":0},
+{"id":"fo1","name":"","typeLine":"Prismatic Fossil","baseType":"Prismatic Fossil","frameType":5,"stackSize":2,"maxStackSize":20,"identified":true,"ilvl":0},
+{"id":"m1","name":"","typeLine":"Strand Map","baseType":"Strand Map","frameType":0,"identified":true,"ilvl":83,"properties":[{"name":"Map Tier","values":[["16",0]],"displayMode":0,"type":1}]},
+{"id":"g1","name":"","typeLine":"Vaal Grace","baseType":"Vaal Grace","frameType":4,"identified":true,"corrupted":true,"ilvl":0,"properties":[{"name":"Vaal, Aura, Spell, AoE, Duration","values":[],"displayMode":0},{"name":"Level","values":[["21 (Max)",0]],"displayMode":0,"type":5},{"name":"Quality","values":[["+20%",1]],"displayMode":0,"type":6}]},
+{"id":"g2","name":"","typeLine":"Arc","baseType":"Arc","frameType":4,"identified":true,"ilvl":0,"properties":[{"name":"Level","values":[["18",0]],"displayMode":0,"type":5},{"name":"Quality","values":[["+17%",1]],"displayMode":0,"type":6}]},
+{"id":"g3","name":"","typeLine":"Empower Support","baseType":"Empower Support","frameType":4,"identified":true,"corrupted":true,"ilvl":0,"properties":[{"name":"Level","values":[["4 (Max)",0]],"displayMode":0,"type":5}]},
+{"id":"u1","name":"<<set:MS>><<set:M>><<set:S>>Tabula Rasa","typeLine":"Simple Robe","baseType":"Simple Robe","frameType":3,"identified":true,"ilvl":70,"sockets":[{"group":0,"attr":"G"},{"group":0,"attr":"G"},{"group":0,"attr":"G"},{"group":0,"attr":"G"},{"group":0,"attr":"G"},{"group":0,"attr":"G"}]},
+{"id":"u2","name":"Headhunter","typeLine":"Leather Belt","baseType":"Leather Belt","frameType":3,"identified":true,"ilvl":84},
+{"id":"u3","name":"Dying Sun","typeLine":"Ruby Flask","baseType":"Ruby Flask","frameType":3,"identified":true,"ilvl":75},
+{"id":"u4","name":"Rumi's Concoction","typeLine":"Granite Flask","baseType":"Granite Flask","frameType":9,"identified":true,"ilvl":80},
+{"id":"r1","name":"Doom Grip","typeLine":"Titan Gauntlets","baseType":"Titan Gauntlets","frameType":2,"identified":true,"ilvl":86,"sockets":[{"group":0,"attr":"S"},{"group":1,"attr":"S"}]}
+]
