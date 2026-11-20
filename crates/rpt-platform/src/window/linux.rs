@@ -396,7 +396,17 @@ impl Loop {
 
     fn update_foreground(&mut self) {
         let active = active_window(&self.conn, self.root, self.atoms).ok().flatten();
-        let fg = self.target.is_some() && active == self.target;
+        // "No active window" is not a focus change. Focus-follows-mouse
+        // compositors (Hyprland) report it while the pointer is over a
+        // surface they won't focus, such as the overlay itself, and then
+        // re-activate the game; treating that as "game lost / regained focus"
+        // dropped the overlay out of its interactive mode at random.
+        let Some(active) = active else {
+            tracing::debug!("_NET_ACTIVE_WINDOW = none; keeping game focused = {}", self.fg);
+            return;
+        };
+        let fg = self.target == Some(active);
+        tracing::debug!("_NET_ACTIVE_WINDOW = {active:#x} (game {:?}) → game focused: {fg}", self.target);
         if fg != self.fg {
             self.fg = fg;
             (self.sink)(WindowEvent::Foreground { game: fg });
