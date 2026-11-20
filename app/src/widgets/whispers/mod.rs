@@ -402,9 +402,17 @@ pub fn show_popout(ctx: &egui::Context, w: &mut WCtx<'_>, st: &mut WhispersState
         if hovered {
             st.book.mark_all_seen();
         }
-        if vctx.input(|i| i.pointer.any_pressed()) {
-            tracing::debug!("whispers pop-out: click received");
-        }
+        vctx.input(|i| {
+            for e in &i.raw.events {
+                match e {
+                    egui::Event::PointerButton { pos, pressed, .. } => {
+                        tracing::trace!("whispers pop-out: button {} at {pos:?} (inner {:?})", if *pressed { "down" } else { "up" }, i.viewport().inner_rect)
+                    }
+                    egui::Event::PointerMoved(p) => tracing::trace!("whispers pop-out: moved {p:?}"),
+                    _ => {}
+                }
+            }
+        });
         // remember where the user put it
         if let (Some(o), Some(inn)) = (outer, inner) {
             let pos = [o.min.x, o.min.y];
@@ -465,7 +473,33 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max
     if !popped {
         ui.set_width(380.0);
     }
-    let header = ui.horizontal(|ui| {
+    if popped {
+        // Drag the window by its header. Registered before the header's
+        // buttons so they stay on top of it and still get clicks.
+        let r = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 36.0));
+        let drag = ui.interact(r, ui.scope_id().with("popout-drag"), egui::Sense::drag()).on_hover_cursor(egui::CursorIcon::Grab);
+        // Move the window ourselves: Hyprland ignores the X11 "start move"
+        // request (_NET_WM_MOVERESIZE) from XWayland windows. Track the
+        // pointer in screen coordinates so the window moving under it
+        // doesn't feed back into the delta.
+        let (inner, outer, local) = ui.ctx().input(|i| (i.viewport().inner_rect, i.viewport().outer_rect, i.pointer.latest_pos()));
+        let mem = ui.scope_id().with("popout-drag-start");
+        if let (Some(inner), Some(outer), Some(local)) = (inner, outer, local) {
+            let screen_ptr = inner.min + local.to_vec2();
+            if drag.drag_started() {
+                ui.ctx().data_mut(|d| d.insert_temp(mem, (screen_ptr, outer.min)));
+            } else if drag.dragged() {
+                if let Some((p0, o0)) = ui.ctx().data(|d| d.get_temp::<(egui::Pos2, egui::Pos2)>(mem)) {
+                    let target = o0 + (screen_ptr - p0);
+                    if (target - outer.min).length() >= 1.0 {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::OuterPosition(target));
+                    }
+                }
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.set_min_height(36.0);
         ui.label(rpt_m3::icon_text(icons::FORUM, 20.0).color(c.primary));
         ui.label(RichText::new("Trade whispers").font(th.font(TypeRole::TitleMedium)).color(c.on_surface));
         let incoming = st.book.list.iter().filter(|x| x.dir == Dir::Incoming && !x.completed).count();
@@ -479,7 +513,8 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max
                 }
                 if let Some(x) = own_mut(w.cfg) {
                     let tip = if x.popout_on_top { "Stays above other windows (click to stop)" } else { "Keep above other windows" };
-                    if ui.add(IconButton::new(ICON_PUSH_PIN).size(32.0).selected(x.popout_on_top).tooltip(tip)).clicked() {
+                    let pin = ui.add(IconButton::new(ICON_PUSH_PIN).size(32.0).selected(x.popout_on_top).tooltip(tip));
+                    if pin.clicked() {
                         x.popout_on_top = !x.popout_on_top;
                         w.save_requested = true;
                         let level = if x.popout_on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
@@ -503,13 +538,6 @@ fn full(ui: &mut Ui, w: &mut WCtx<'_>, st: &mut WhispersState, now: LogSecs, max
             }
         });
     });
-    if popped {
-        // drag the window by its header (empty space between title and buttons)
-        let drag = ui.interact(header.response.rect, ui.scope_id().with("popout-drag"), egui::Sense::drag());
-        if drag.on_hover_cursor(egui::CursorIcon::Grab).drag_started() {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-        }
-    }
     super::mapping::client_log_hint(ui, w, st.got_lines);
     quick_bar(ui, w, st);
 
