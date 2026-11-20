@@ -201,7 +201,10 @@ const OVERLAY_CLASS: &str = "rusty-poe-trade";
 
 /// On Hyprland, add a runtime-only window rule for the overlay's own class so
 /// the compositor doesn't blur (or shadow / dim / animate) everything behind
-/// the transparent full-game overlay. Nothing is written to the user's config;
+/// the transparent full-game overlay, and never focuses it: with
+/// focus-follows-mouse the overlay is "under the cursor" over the whole game,
+/// and keybinds such as fullscreen would hit the overlay instead of the game.
+/// The overlay still gets keyboard input when active via X11 `SetInputFocus`. Nothing is written to the user's config;
 /// the rule disappears on `hyprctl reload`. `RPT_NO_HYPR_RULES=1` skips it.
 fn hyprland_overlay_rule() {
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() || std::env::var_os("RPT_NO_HYPR_RULES").is_some() {
@@ -218,14 +221,15 @@ fn hyprland_overlay_rule() {
     };
     // Hyprland 0.5x+ (Lua config)
     let lua = format!(
-        "hl.window_rule({{ name = \"rusty-poe-trade-overlay\", match = {{ class = \"^({OVERLAY_CLASS})$\" }}, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})"
+        "hl.window_rule({{ name = \"rusty-poe-trade-overlay-{}\", match = {{ class = \"^({OVERLAY_CLASS})$\" }}, no_focus = true, no_blur = true, no_shadow = true, no_dim = true, no_anim = true, border_size = 0 }})",
+        std::process::id()
     );
     if run(&["eval", &lua]) {
-        tracing::info!("Hyprland: added runtime window rule for the overlay (no blur/shadow/dim/anim)");
+        tracing::info!("Hyprland: added runtime window rule for the overlay (no focus/blur/shadow/dim/anim)");
         return;
     }
     // Older Hyprland (hyprlang config)
-    let ok = ["noblur", "noshadow", "nodim", "noanim", "noborder"]
+    let ok = ["nofocus", "noblur", "noshadow", "nodim", "noanim", "noborder"]
         .iter()
         .all(|r| run(&["keyword", "windowrulev2", &format!("{r}, class:^({OVERLAY_CLASS})$")]));
     if ok {
