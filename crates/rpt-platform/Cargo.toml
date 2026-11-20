@@ -1,7 +1,47 @@
 [package]
 name = "rpt-platform"
+description = "OS integration layer: global shortcuts, game window tracking, clipboard, input synthesis, host files, tray, updater"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam-channel = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+directories = { workspace = true }
+rust-ini = { workspace = true }
+fnv = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+global-hotkey = { workspace = true }
+enigo = { workspace = true, default-features = false, features = ["x11rb"] }
+arboard = { workspace = true }
+tray-icon = { workspace = true }
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rdev = { workspace = true }
+x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
+libc = "0.2"
+gtk = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"

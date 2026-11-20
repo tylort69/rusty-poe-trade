@@ -1,7 +1,24 @@
 [package]
 name = "rpt-trade"
+description = "Price-check filters, trade API, bulk exchange, poe.ninja and poeprices clients"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+rpt-data.workspace = true
+rpt-parser.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+regex.workspace = true
+tokio.workspace = true
+reqwest = { workspace = true, features = ["cookies", "multipart"] }
+base64 = "0.22"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
