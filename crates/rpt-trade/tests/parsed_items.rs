@@ -86,3 +86,27 @@ fn widget_defaults_apply_to_presets() {
     assert!(rpt_trade::check::initial_do_search(&item, &presets, true, &cfg));
     assert!(!rpt_trade::check::initial_do_search(&item, &presets, false, &cfg));
 }
+
+#[test]
+fn seller_modes_map_to_trade_status() {
+    use rpt_trade::client::TradeConfig;
+    rpt_data::init("en").unwrap();
+    let item = rpt_parser::parse_clipboard(RARE_HELMET).unwrap();
+    let status = |merchant: bool, in_person: bool, offline: bool| {
+        let mut cfg = TradeConfig::default();
+        cfg.price_check.merchant_only = merchant;
+        cfg.price_check.in_person_only = in_person;
+        cfg.price_check.default_offline = offline;
+        cfg.price_check.default_currency = Some("alch".into());
+        let presets = rpt_trade::check::presets_for_item(&item, None, &cfg, "Standard");
+        let p = presets.active_preset().unwrap();
+        let req = serde_json::to_value(create_trade_request(&p.filters, &p.stats).unwrap()).unwrap();
+        assert_eq!(req["query"]["filters"]["trade_filters"]["filters"]["price"]["option"], "alch", "{req:#}");
+        req["query"]["status"]["option"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(status(true, false, false), "securable");
+    assert_eq!(status(false, false, false), "available");
+    assert_eq!(status(false, true, false), "online");
+    assert_eq!(status(false, true, true), "any");
+    assert_eq!(status(false, false, true), "any");
+}

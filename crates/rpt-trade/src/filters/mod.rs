@@ -195,6 +195,9 @@ pub struct TradeOptions {
     pub offline: bool,
     pub online_in_league: bool,
     pub merchant_only: bool,
+    /// Only sellers you trade with in person (no instant buyout listings).
+    #[serde(default)]
+    pub in_person_only: bool,
     pub listed: Option<String>,
     pub currency: Option<String>,
     pub league: String,
@@ -203,6 +206,23 @@ pub struct TradeOptions {
 }
 
 impl TradeOptions {
+    /// The trade site's `status.option` for these seller choices.
+    ///
+    /// The site offers exactly these modes: `securable` (instant buyout),
+    /// `available` (instant buyout and in person, online), `online` (in person,
+    /// online) and `any` (everything, offline sellers too).
+    pub fn status(&self) -> &'static str {
+        if self.offline {
+            "any"
+        } else if self.merchant_only {
+            "securable"
+        } else if self.in_person_only {
+            "online"
+        } else {
+            "available"
+        }
+    }
+
     /// Logic from `OnlineFilterCore.vue` `onOfflineUpdate`.
     pub fn set_offline(&mut self, offline: bool, api: crate::trade::TradeApi) {
         self.offline = offline;

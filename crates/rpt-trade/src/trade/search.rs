@@ -172,13 +172,7 @@ fn name_to_query(name: &str, discriminator: Option<&str>) -> NameQuery {
 /// Upstream `createTradeRequest`.
 pub fn create_trade_request(filters: &ItemFilters, stats: &[FilterOrGroup]) -> Result<TradeRequest> {
     let trade = &filters.trade;
-    let status = if trade.offline {
-        "any"
-    } else if trade.merchant_only {
-        "securable"
-    } else {
-        "available"
-    };
+    let status = trade.status();
     let mut sort = Map::new();
     sort.insert("price".to_owned(), Value::String("asc".to_owned()));
     let mut query = TradeQuery {

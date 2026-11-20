@@ -179,6 +179,7 @@ pub fn price_check_options(pc: &PriceCheckWidget) -> PriceCheckOptions {
         smart_initial_always: pc.smart_initial_always,
         locked_initial_always: pc.locked_initial_always,
         default_offline: pc.default_offline,
+        in_person_only: pc.in_person_only,
         default_listed: pc.default_listed.clone(),
         fill_roll_max: pc.fill_roll_max,
     }

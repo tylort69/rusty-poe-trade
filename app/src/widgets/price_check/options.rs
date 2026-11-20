@@ -28,12 +28,77 @@ fn auto_set(v: AutoSearch, on: &mut bool, always: &mut bool) {
     *always = v == AutoSearch::Always;
 }
 
-/// Sellers to include by default.
-#[derive(Clone, Copy, PartialEq)]
-enum Sellers {
-    InstantBuyout,
-    Online,
-    Offline,
+/// Seller choices as three independent picks. The trade site has only four
+/// seller modes, so this maps the picks onto the nearest one.
+pub struct SellerPicks<'a> {
+    /// "Instant buyout only" on the trade site.
+    pub merchant_only: &'a mut bool,
+    /// "In person (online)" only.
+    pub in_person_only: &'a mut bool,
+    /// Offline sellers too ("Any").
+    pub offline: &'a mut bool,
+}
+
+/// Draw the seller pickers: sale type (instant buyout / in person, either or
+/// both) and, for in-person sellers, online only or offline too. Returns true
+/// if something changed.
+pub fn sellers(ui: &mut Ui, p: SellerPicks<'_>) -> bool {
+    let th = theme(ui.ctx());
+    let c = th.colors;
+    let mut instant = !*p.in_person_only;
+    let mut in_person = !*p.merchant_only;
+    let mut changed = false;
+
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        // never allow both off: clicking the only selected one does nothing
+        if ui.add(Chip::filter("Instant buyout", instant)).on_hover_text("Merchant tab listings: travel to their hideout and buy, no whisper needed.").clicked() && in_person {
+            instant = !instant;
+            changed = true;
+        }
+        if ui.add(Chip::filter("In person", in_person)).on_hover_text("Whisper the seller and trade face to face. You can negotiate.").clicked() && instant {
+            in_person = !in_person;
+            changed = true;
+        }
+    });
+    if changed {
+        *p.merchant_only = instant && !in_person;
+        *p.in_person_only = in_person && !instant;
+        if !in_person {
+            *p.offline = false;
+        }
+    }
+
+    if in_person {
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+            ui.label(RichText::new("In-person sellers:").color(c.on_surface_variant));
+            let mut off = *p.offline;
+            if choice(ui, &mut off, &[(false, "Online only"), (true, "Online and offline")]) {
+                *p.offline = off;
+                changed = true;
+            }
+        });
+        if *p.offline && !instant {
+            ui.add(egui::Label::new(
+                RichText::new("The trade site can't leave out instant buyout once offline sellers are included, so those listings show too.")
+                    .font(th.font(TypeRole::BodySmall))
+                    .color(c.on_surface_variant),
+            ).wrap());
+        }
+    }
+    changed
+}
+
+/// Short summary for the filter button, e.g. "In person, online".
+pub fn sellers_label(merchant_only: bool, in_person_only: bool, offline: bool) -> &'static str {
+    match (offline, merchant_only, in_person_only) {
+        (true, _, _) => "Any seller, offline too",
+        (false, true, _) => "Instant buyout",
+        (false, false, true) => "In person, online",
+        (false, false, false) => "Instant buyout + in person",
+    }
 }
 
 const LISTED: [(Option<&str>, &str); 7] = [
@@ -46,11 +111,22 @@ const LISTED: [(Option<&str>, &str); 7] = [
     (Some("2months"), "2 months"),
 ];
 
-const CURRENCY: [(Option<&str>, &str); 4] = [
+/// Asking-price currencies (trade site `price.option` ids).
+pub const CURRENCY: [(Option<&str>, &str); 14] = [
     (None, "Any currency"),
     (Some("chaos_divine"), "Chaos or Divine"),
-    (Some("chaos"), "Chaos only"),
-    (Some("divine"), "Divine only"),
+    (Some("chaos"), "Chaos"),
+    (Some("divine"), "Divine"),
+    (Some("exalted"), "Exalted"),
+    (Some("alt"), "Alteration"),
+    (Some("alch"), "Alchemy"),
+    (Some("fusing"), "Fusing"),
+    (Some("chrome"), "Chromatic"),
+    (Some("jew"), "Jeweller's"),
+    (Some("chance"), "Chance"),
+    (Some("scour"), "Scouring"),
+    (Some("vaal"), "Vaal"),
+    (Some("mirror"), "Mirror"),
 ];
 
 const RANGE_PRESETS: [f64; 5] = [0.0, 5.0, 10.0, 15.0, 20.0];
@@ -164,27 +240,15 @@ pub fn options(ui: &mut Ui, pc: &mut PriceCheckWidget, i18n: &I18n) -> bool {
     });
 
     section(ui, "Listings", |ui| {
-        let mut sellers = if pc.default_offline {
-            Sellers::Offline
-        } else if pc.merchant_only {
-            Sellers::InstantBuyout
-        } else {
-            Sellers::Online
-        };
         block(
             ui,
             "Sellers",
-            "Instant buyout: merchant tab listings you can buy by travelling to the hideout. \
-             Online: also players who sell in person (whisper them). Include offline: every listing, mostly stale prices.",
+            "Pick one or both sale types. Instant buyout only: buy right away. In person, online only: sellers you can whisper and haggle with now. \
+             Both, online and offline: everything, to see whether the item exists at all.",
             |ui| {
-                if choice(
-                    ui,
-                    &mut sellers,
-                    &[(Sellers::InstantBuyout, "Instant buyout only"), (Sellers::Online, "Online"), (Sellers::Offline, "Include offline")],
-                ) {
-                    pc.merchant_only = sellers == Sellers::InstantBuyout;
-                    pc.default_offline = sellers == Sellers::Offline;
-                }
+                ui.vertical(|ui| {
+                    sellers(ui, SellerPicks { merchant_only: &mut pc.merchant_only, in_person_only: &mut pc.in_person_only, offline: &mut pc.default_offline });
+                });
             },
         );
         block(ui, "Listed within", "Shorter windows give fresher prices but fewer results.", |ui| {
@@ -197,7 +261,7 @@ pub fn options(ui: &mut Ui, pc: &mut PriceCheckWidget, i18n: &I18n) -> bool {
         block(
             ui,
             "Asking price in",
-            "Which currencies sellers must ask for. Chaos or Divine skips listings priced in other currencies, which are often mispriced.",
+            "Only show listings priced in this currency. Any currency compares everything by its chaos value; picking one (e.g. Alteration) shows only sellers asking for it.",
             |ui| {
                 let mut cur = pc.default_currency.clone();
                 let opts: Vec<(Option<String>, &str)> = CURRENCY.iter().map(|(v, l)| (v.map(str::to_owned), *l)).collect();
@@ -255,6 +319,14 @@ pub fn options(ui: &mut Ui, pc: &mut PriceCheckWidget, i18n: &I18n) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seller_labels_match_site_modes() {
+        assert_eq!(sellers_label(true, false, false), "Instant buyout");
+        assert_eq!(sellers_label(false, true, false), "In person, online");
+        assert_eq!(sellers_label(false, false, false), "Instant buyout + in person");
+        assert_eq!(sellers_label(false, true, true), "Any seller, offline too");
+    }
 
     #[test]
     fn auto_search_roundtrip() {

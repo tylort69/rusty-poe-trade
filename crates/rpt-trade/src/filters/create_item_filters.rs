@@ -63,6 +63,7 @@ pub fn create_filters(item: &ParsedItem, opts: &CreateOptions) -> ItemFilters {
             // these are Divination Cards, and some items at start of league
             // that are on Currency Exchange but was not added to Bulk section of site yet
             !(item.info.exchangeable && item.info.trade_tag.is_none()),
+        in_person_only: false,
         listed: None,
         currency: opts.currency.clone(),
         league: opts.league.clone(),

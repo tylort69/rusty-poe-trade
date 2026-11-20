@@ -99,6 +99,8 @@ pub struct PriceCheckOptions {
     pub locked_initial_always: bool,
     /// Include offline sellers by default.
     pub default_offline: bool,
+    /// Only in-person sellers by default (no instant buyout listings).
+    pub in_person_only: bool,
     /// Default "listed within" (`1day`, `3days`, `1week`, `2weeks`, `1month`, `2months`).
     pub default_listed: Option<String>,
     /// Fill both ends of a mod's range (min and max), not only the side that
@@ -125,6 +127,7 @@ impl Default for PriceCheckOptions {
             smart_initial_always: false,
             locked_initial_always: false,
             default_offline: false,
+            in_person_only: false,
             default_listed: None,
             fill_roll_max: false,
         }

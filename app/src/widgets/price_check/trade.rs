@@ -114,14 +114,11 @@ fn online_filter(ui: &mut Ui, env: &Env<'_>, filters: &mut ItemFilters, api: Tra
     let th = theme(ui.ctx());
     let c = th.colors;
     let t = &mut filters.trade;
-    let label_id = if t.offline {
-        "Offline"
-    } else if api == TradeApi::Trade && t.merchant_only {
-        "online_filter.merchant_toggle"
+    let mut label = if api == TradeApi::Trade {
+        super::options::sellers_label(t.merchant_only, t.in_person_only, t.offline).to_owned()
     } else {
-        "Online"
+        env.t(if t.offline { "Offline" } else { "Online" })
     };
-    let mut label = env.t(label_id);
     let selected = env.sv.leagues.selected_id();
     if selected.as_deref() != Some(t.league.as_str()) {
         label.push_str(&format!(", {}", t.league));
@@ -139,13 +136,26 @@ fn online_filter(ui: &mut Ui, env: &Env<'_>, filters: &mut ItemFilters, api: Tra
         ui.set_min_width(320.0);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    let mut off = t.offline;
-                    if rpt_m3::switch(ui, &mut off).changed() {
-                        t.set_offline(off, api);
+                if api == TradeApi::Trade {
+                    ui.label(RichText::new("Sellers").font(th.font(TypeRole::LabelLarge)).color(c.on_surface_variant));
+                    let (mut merchant, mut in_person, mut off) = (t.merchant_only, t.in_person_only, t.offline);
+                    if super::options::sellers(ui, super::options::SellerPicks { merchant_only: &mut merchant, in_person_only: &mut in_person, offline: &mut off }) {
+                        t.merchant_only = merchant;
+                        t.in_person_only = in_person;
+                        if off != t.offline {
+                            t.set_offline(off, api);
+                        }
                     }
-                    ui.label(env.t("online_filter.offline_toggle"));
-                });
+                    ui.add_space(8.0);
+                } else {
+                    ui.horizontal(|ui| {
+                        let mut off = t.offline;
+                        if rpt_m3::switch(ui, &mut off).changed() {
+                            t.set_offline(off, api);
+                        }
+                        ui.label(env.t("online_filter.offline_toggle"));
+                    });
+                }
                 if api == TradeApi::Trade {
                     for (v, key) in [
                         (None, "online_filter.listed_any_time"),
@@ -165,18 +175,11 @@ fn online_filter(ui: &mut Ui, env: &Env<'_>, filters: &mut ItemFilters, api: Tra
             });
             ui.add_space(16.0);
             ui.vertical(|ui| {
-                if !t.offline {
+                if api == TradeApi::Bulk && !t.offline {
                     ui.horizontal(|ui| {
-                        if api == TradeApi::Bulk {
-                            rpt_m3::switch(ui, &mut t.online_in_league);
-                            ui.label(env.t("online_filter.in_league_toggle"));
-                        } else {
-                            rpt_m3::switch(ui, &mut t.merchant_only);
-                            ui.label(env.t("online_filter.merchant_toggle"));
-                        }
+                        rpt_m3::switch(ui, &mut t.online_in_league);
+                        ui.label(env.t("online_filter.in_league_toggle"));
                     });
-                } else {
-                    ui.add_space(32.0);
                 }
                 for l in &leagues {
                     let mut cur = t.league.clone();
@@ -186,15 +189,12 @@ fn online_filter(ui: &mut Ui, env: &Env<'_>, filters: &mut ItemFilters, api: Tra
                 }
                 if api == TradeApi::Trade {
                     ui.add_space(8.0);
-                    for (v, key) in [
-                        (None, "online_filter.currency_any"),
-                        (Some("chaos"), "online_filter.currency_only_chaos"),
-                        (Some("divine"), "online_filter.currency_only_div"),
-                        (Some("chaos_divine"), "online_filter.currency_chaos_div"),
-                    ] {
+                    ui.label(RichText::new("Asking price in").font(th.font(TypeRole::LabelLarge)).color(c.on_surface_variant));
+                    for (v, label) in super::options::CURRENCY {
+                        let v = v.map(str::to_owned);
                         let mut cur = t.currency.clone();
-                        if rpt_m3::radio(ui, &mut cur, v.map(str::to_owned), env.t(key)).clicked() {
-                            t.currency = v.map(str::to_owned);
+                        if rpt_m3::radio(ui, &mut cur, v.clone(), label).clicked() {
+                            t.currency = v;
                         }
                     }
                 }

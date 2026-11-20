@@ -53,6 +53,9 @@ fn apply_defaults(presets: &mut Presets, w: &crate::client::PriceCheckOptions) {
         }
     }
     for p in &mut presets.presets {
+        if w.in_person_only && !w.merchant_only {
+            p.filters.trade.in_person_only = true;
+        }
         if w.default_offline {
             p.filters.trade.offline = true;
         }

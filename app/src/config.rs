@@ -381,6 +381,9 @@ pub struct PriceCheckWidget {
     /// Include offline sellers by default.
     #[serde(default)]
     pub default_offline: bool,
+    /// Only in-person sellers by default (no instant buyout listings).
+    #[serde(default)]
+    pub in_person_only: bool,
     /// Default "listed within" filter (None = any time).
     #[serde(default)]
     pub default_listed: Option<String>,
@@ -508,6 +511,7 @@ impl Default for Config {
                 smart_initial_always: false,
                 locked_initial_always: false,
                 default_offline: false,
+                in_person_only: false,
                 default_listed: None,
                 fill_roll_max: false,
                 extra: Map::new(),
