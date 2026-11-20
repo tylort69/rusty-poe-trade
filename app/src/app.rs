@@ -41,6 +41,7 @@ pub struct App {
     snackbar: rpt_m3::Snackbar,
     /// Session cookie last handed to the trade client.
     trade_sid: Option<String>,
+    logged_screen: Option<(Rect, f32)>,
     logs: Vec<String>,
 }
 
@@ -80,6 +81,7 @@ impl App {
             game_sync: None,
             snackbar: rpt_m3::Snackbar::default(),
             trade_sid: None,
+            logged_screen: None,
             logs: Vec::new(),
         }
     }
@@ -275,6 +277,21 @@ impl App {
     /// The real game client area in points (overlay-local). Widgets that track
     /// in-game panels use this; anchored widgets derive their (possibly
     /// centered 16:9) area from it in `chrome::widget_area`.
+    /// Log the drawing area whenever it changes (diagnosing overlay placement).
+    fn log_screen(&mut self, ctx: &Context) {
+        let r = ctx.content_rect();
+        let key = (r, ctx.pixels_per_point());
+        if self.logged_screen != Some(key) {
+            self.logged_screen = Some(key);
+            tracing::info!(
+                "overlay drawing area {:?} at {} px/pt; game rect (px) {:?}",
+                r,
+                key.1,
+                self.platform.game_rect_px()
+            );
+        }
+    }
+
     fn screen_rect(&self, ctx: &Context) -> Rect {
         ctx.content_rect()
     }
@@ -405,6 +422,7 @@ impl eframe::App for App {
         self.keyboard_zoom(ctx);
         self.overlay_hotkeys(ctx);
         self.sync_trade_session(ctx);
+        self.log_screen(ctx);
         self.handle_events(ctx);
         if self.services.sync_into(&mut self.cfg) { self.dirty_since.get_or_insert_with(Instant::now); }
         self.sync_zoom(ctx);
