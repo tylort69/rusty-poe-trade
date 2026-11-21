@@ -196,7 +196,8 @@ mod tests {
     #[test]
     fn linux_candidates() {
         let env = Env { home: "/home/u".into(), user: Some("u".into()), ..Default::default() };
-        let c: Vec<String> = candidate_patterns(&env).iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        // separators normalised: on a Windows host `join` uses backslashes
+        let c: Vec<String> = candidate_patterns(&env).iter().map(|p| p.to_string_lossy().replace('\\', "/")).collect();
         let has = |s: &str| assert!(c.iter().any(|x| x == s), "missing {s} in {c:#?}");
         has("/home/u/Documents/Path of Building/Builds");
         has("/home/u/.local/share/pobfrontend/Path of Building/Builds");
